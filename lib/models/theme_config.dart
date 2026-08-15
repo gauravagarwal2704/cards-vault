@@ -1,0 +1,151 @@
+import 'package:flutter/material.dart';
+
+enum AppBrightnessMode {
+  light,
+  dark,
+  amoled,
+}
+
+class AccentColorOption {
+  final String id;
+  final String name;
+  final Color seedColor;
+  final DynamicSchemeVariant schemeVariant;
+
+  const AccentColorOption({
+    required this.id,
+    required this.name,
+    required this.seedColor,
+    this.schemeVariant = DynamicSchemeVariant.tonalSpot,
+  });
+
+  static const AccentColorOption indigo = AccentColorOption(
+    id: 'indigo',
+    name: 'Indigo',
+    seedColor: Color(0xFF6366F1),
+  );
+
+  static const AccentColorOption ocean = AccentColorOption(
+    id: 'ocean',
+    name: 'Ocean',
+    seedColor: Color(0xFF0D9488),
+  );
+
+  static const AccentColorOption ember = AccentColorOption(
+    id: 'ember',
+    name: 'Ember',
+    seedColor: Color(0xFFEA580C),
+  );
+
+  static const AccentColorOption forest = AccentColorOption(
+    id: 'forest',
+    name: 'Forest',
+    seedColor: Color(0xFF16A34A),
+  );
+
+  static const AccentColorOption orchid = AccentColorOption(
+    id: 'orchid',
+    name: 'Orchid',
+    seedColor: Color(0xFFDB2777),
+  );
+
+  static const AccentColorOption violet = AccentColorOption(
+    id: 'violet',
+    name: 'Violet',
+    seedColor: Color(0xFF7C3AED),
+  );
+
+  static const AccentColorOption crimson = AccentColorOption(
+    id: 'crimson',
+    name: 'Crimson',
+    seedColor: Color(0xFFDC2626),
+  );
+
+  static const AccentColorOption rose = AccentColorOption(
+    id: 'rose',
+    name: 'Rose',
+    seedColor: Color(0xFFE11D48),
+  );
+
+  static const AccentColorOption amber = AccentColorOption(
+    id: 'amber',
+    name: 'Amber',
+    seedColor: Color(0xFFF59E0B),
+  );
+
+  static const AccentColorOption yellow = AccentColorOption(
+    id: 'yellow',
+    name: 'Yellow',
+    seedColor: Color(0xFFEAB308),
+  );
+
+  static const AccentColorOption graphite = AccentColorOption(
+    id: 'graphite',
+    name: 'Graphite',
+    seedColor: Color(0xFF64748B),
+    schemeVariant: DynamicSchemeVariant.neutral,
+  );
+
+  static const List<AccentColorOption> presets = [
+    indigo,
+    ocean,
+    ember,
+    forest,
+    orchid,
+    violet,
+    crimson,
+    rose,
+    amber,
+    yellow,
+    graphite,
+  ];
+
+  static AccentColorOption? findById(String id) {
+    for (final option in presets) {
+      if (option.id == id) return option;
+    }
+    return null;
+  }
+
+  static AccentColorOption? findBySeed(Color color) {
+    for (final option in presets) {
+      if (option.seedColor.value == color.value) return option;
+    }
+    return null;
+  }
+}
+
+/// Legacy combined theme ids kept for migrating saved preferences.
+enum ThemeMode {
+  light,
+  dark,
+  amoled,
+  palette1,
+  palette2,
+  palette3,
+  palette4,
+  palette5,
+}
+
+class ThemeMigration {
+  static (AppBrightnessMode, AccentColorOption) fromLegacy(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.light:
+        return (AppBrightnessMode.light, AccentColorOption.indigo);
+      case ThemeMode.dark:
+        return (AppBrightnessMode.dark, AccentColorOption.indigo);
+      case ThemeMode.amoled:
+        return (AppBrightnessMode.amoled, AccentColorOption.indigo);
+      case ThemeMode.palette1:
+        return (AppBrightnessMode.dark, AccentColorOption.ocean);
+      case ThemeMode.palette2:
+        return (AppBrightnessMode.dark, AccentColorOption.ember);
+      case ThemeMode.palette3:
+        return (AppBrightnessMode.dark, AccentColorOption.forest);
+      case ThemeMode.palette4:
+        return (AppBrightnessMode.dark, AccentColorOption.orchid);
+      case ThemeMode.palette5:
+        return (AppBrightnessMode.dark, AccentColorOption.graphite);
+    }
+  }
+}

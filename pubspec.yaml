@@ -1,0 +1,133 @@
+name: cards_wallet
+description: "A credit card wallet app with NFC card reading capability."
+# The following line prevents the package from being accidentally published to
+# pub.dev using `flutter pub publish`. This is preferred for private packages.
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+# The following defines the version and build number for your application.
+# A version number is three numbers separated by dots, like 1.2.43
+# followed by an optional build number separated by a +.
+# Both the version and the builder number may be overridden in flutter
+# build by specifying --build-name and --build-number, respectively.
+# In Android, build-name is used as versionName while build-number used as versionCode.
+# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
+# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
+# Read more about iOS versioning at
+# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
+# In Windows, build-name is used as the major, minor, and patch parts
+# of the product and file versions while build-number is used as the build suffix.
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.0
+
+# Dependencies specify other packages that your package needs in order to work.
+# To automatically upgrade your package dependencies to the latest versions
+# consider running `flutter pub upgrade --major-versions`. Alternatively,
+# dependencies can be manually updated by changing the version numbers below to
+# the latest version available on pub.dev. To see which dependencies have newer
+# versions available, run `flutter pub outdated`.
+dependencies:
+  flutter:
+    sdk: flutter
+  share_plus: ^10.0.0
+
+
+  # The following adds the Cupertino Icons font to your application.
+  # Use with the CupertinoIcons class for iOS style icons.
+  cupertino_icons: ^1.0.6
+  
+  # Google Fonts for typography
+  google_fonts: ^8.0.0
+  
+  # SVG rendering
+  flutter_svg: ^2.0.0
+  
+  # Searchable dropdown
+  dropdown_search: ^5.0.6
+  
+  # NFC functionality for reading credit card data
+  flutter_nfc_kit: ^3.3.1
+  
+  # State management
+  provider: ^6.1.1
+  
+  # File path utilities
+  path_provider: ^2.1.1
+  
+  # Shared preferences
+  shared_preferences: ^2.2.2
+  
+  # File picker
+  file_picker: ^10.3.10
+  
+  # Package info
+  package_info_plus: ^8.3.1
+  
+  # Security packages
+  flutter_secure_storage: ^9.0.0
+  encrypt: ^5.0.3
+  local_auth: ^2.1.8
+  crypto: ^3.0.3
+  pointycastle: ^3.9.1
+  uuid: ^4.2.2
+  
+  # OCR and Camera functionality
+  google_mlkit_text_recognition: ^0.13.0
+  google_mlkit_digital_ink_recognition: ^0.12.0
+  flutter_tesseract_ocr: ^0.4.28
+  tflite_flutter: ^0.12.1
+  image_picker: ^1.0.7
+  image: ^4.1.7
+  camera: ^0.10.5+9
+  image_cropper: ^11.0.0
+
+  # Deep links into system settings (NFC, app permissions)
+  app_settings: ^5.1.1
+
+  # Zip bundling for backups that include card photos
+  archive: ^3.6.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # The "flutter_lints" package below contains a set of recommended lints to
+  # encourage good coding practices. The lint set provided by the package is
+  # activated in the `analysis_options.yaml` file located at the root of your
+  # package. See that file for information about deactivating specific lint
+  # rules and activating additional ones.
+  flutter_lints: ^6.0.0
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
+flutter:
+
+  # The following line ensures that the Material Icons font is
+  # included with your application, so that you can use the icons in
+  # the material Icons class.
+  uses-material-design: true
+  
+  assets:
+    - assets/
+    - assets/banks-logo-small/
+    - assets/banks-logo-large/
+    - assets/networks/
+
+  fonts:
+    - family: Outfit
+      fonts:
+        - asset: assets/fonts/Outfit-Light.ttf
+          weight: 300
+        - asset: assets/fonts/Outfit-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Outfit-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Outfit-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Outfit-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Outfit-ExtraBold.ttf
+          weight: 800

@@ -220,6 +220,7 @@ class AppTheme {
       chipTheme: ChipThemeData(
         backgroundColor: colorScheme.surfaceContainerHighest,
         selectedColor: colorScheme.secondaryContainer,
+        showCheckmark: false,
         labelStyle: AppTypography.caption(color: colorScheme.onSurface),
         secondaryLabelStyle: AppTypography.caption(
           color: colorScheme.onSecondaryContainer,

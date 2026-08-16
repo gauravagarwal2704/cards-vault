@@ -195,6 +195,26 @@ void main() {
     expect(stackedGridY, closeTo(carouselY, 0.01));
   });
 
+  testWidgets('filter sheet header and content share a left edge', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'profile_display_name': 'Avery'});
+
+    await tester.pumpWidget(_home(cardLoader: _loadNoCards));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.byIcon(Icons.filter_list));
+    await tester.pumpAndSettle();
+
+    final titleLeft = tester
+        .getTopLeft(find.byKey(const ValueKey('filter-sheet-title')))
+        .dx;
+    final contentLeft = tester
+        .getTopLeft(find.byKey(const ValueKey('filter-sheet-content')))
+        .dx;
+
+    expect(contentLeft, closeTo(titleLeft, 0.01));
+  });
+
   testWidgets('long press enters bulk selection outside custom stacks', (
     tester,
   ) async {

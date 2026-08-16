@@ -440,6 +440,12 @@ class _CardEditScreenState extends State<CardEditScreen> {
           ),
         ),
         centerTitle: true,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: AppSpacing.xs),
+            child: _buildSaveAction(),
+          ),
+        ],
       ),
       body: Form(
         key: _formKey,
@@ -499,27 +505,6 @@ class _CardEditScreenState extends State<CardEditScreen> {
               ],
             );
           },
-        ),
-      ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Material(
-          color: Theme.of(context).colorScheme.surfaceContainer,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg,
-              AppSpacing.sm,
-              AppSpacing.lg,
-              AppSpacing.md,
-            ),
-            child: Align(
-              heightFactor: 1,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 680),
-                child: _buildSaveButton(),
-              ),
-            ),
-          ),
         ),
       ),
     );
@@ -714,14 +699,18 @@ class _CardEditScreenState extends State<CardEditScreen> {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Text(
-                      _cardholderController.text.isEmpty
-                          ? 'YOUR NAME'
-                          : _cardholderController.text.toUpperCase(),
-                      style: AppTypography.caption(color: secondaryForeground)
-                          .copyWith(fontWeight: FontWeight.w500),
+                    Expanded(
+                      child: Text(
+                        _cardholderController.text.isEmpty
+                            ? 'YOUR NAME'
+                            : _cardholderController.text.toUpperCase(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.caption(color: secondaryForeground)
+                            .copyWith(fontWeight: FontWeight.w500),
+                      ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: AppSpacing.sm),
                     Text(
                       _expiryController.text.isEmpty
                           ? 'MM/YY'
@@ -730,6 +719,14 @@ class _CardEditScreenState extends State<CardEditScreen> {
                         fontSize: 12,
                         color: secondaryForeground,
                       ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    CardNetworkLogo(
+                      cardNumber: _cardNumberController.text,
+                      forceNetwork: _detectedNetwork,
+                      height: 26,
+                      maxWidth: 72,
+                      backgroundColor: primaryColor,
                     ),
                   ],
                 ),
@@ -1303,25 +1300,21 @@ class _CardEditScreenState extends State<CardEditScreen> {
     });
   }
 
-  Widget _buildSaveButton() {
+  Widget _buildSaveAction() {
     final scheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: FilledButton.icon(
-        onPressed: _isLoading ? null : _saveCard,
-        icon: _isLoading
-            ? SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  color: scheme.onPrimary,
-                  strokeWidth: 2,
-                ),
-              )
-            : const Icon(Icons.check_rounded),
-        label: Text(widget.card != null ? 'Save changes' : 'Confirm & save'),
-      ),
+    return TextButton(
+      key: const ValueKey('card-editor-save'),
+      onPressed: _isLoading ? null : _saveCard,
+      child: _isLoading
+          ? SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                color: scheme.primary,
+                strokeWidth: 2,
+              ),
+            )
+          : const Text('Save'),
     );
   }
 }

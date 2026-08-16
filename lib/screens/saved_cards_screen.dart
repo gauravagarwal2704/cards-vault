@@ -1732,20 +1732,27 @@ class _FilterModalState extends State<_FilterModal> {
           _buildHeader(),
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildCategorySection(),
-                  const SizedBox(height: 24),
-                  _buildGroupsSection(),
-                  const SizedBox(height: 24),
-                  _buildBanksSection(),
-                  const SizedBox(height: 24),
-                  _buildCardholdersSection(),
-                  const SizedBox(height: 24),
-                  _buildNicknamesSection(),
-                ],
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.xl,
+                vertical: AppSpacing.xl,
+              ),
+              child: SizedBox(
+                key: const ValueKey('filter-sheet-content'),
+                width: double.infinity,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildCategorySection(),
+                    const SizedBox(height: AppSpacing.xl),
+                    _buildGroupsSection(),
+                    const SizedBox(height: AppSpacing.xl),
+                    _buildBanksSection(),
+                    const SizedBox(height: AppSpacing.xl),
+                    _buildCardholdersSection(),
+                    const SizedBox(height: AppSpacing.xl),
+                    _buildNicknamesSection(),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1765,7 +1772,12 @@ class _FilterModalState extends State<_FilterModal> {
         _tempGroups.isNotEmpty;
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.xl,
+        AppSpacing.md,
+        AppSpacing.md,
+        AppSpacing.md,
+      ),
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(color: scheme.outlineVariant, width: 1),
@@ -1776,6 +1788,7 @@ class _FilterModalState extends State<_FilterModal> {
           Expanded(
             child: Text(
               'Filter Cards',
+              key: const ValueKey('filter-sheet-title'),
               style: AppTypography.appBarTitle(color: scheme.onSurface),
             ),
           ),

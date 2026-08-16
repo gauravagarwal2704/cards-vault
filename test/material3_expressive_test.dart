@@ -23,6 +23,8 @@ void main() {
     expect(provider.darkTheme.useMaterial3, isTrue);
     expect(provider.lightTheme.extension<AppSemanticColors>(), isNotNull);
     expect(provider.darkTheme.extension<AppSemanticColors>(), isNotNull);
+    expect(provider.lightTheme.chipTheme.showCheckmark, isFalse);
+    expect(provider.darkTheme.chipTheme.showCheckmark, isFalse);
     expect(provider.materialThemeMode, ThemeMode.system);
 
     await provider.setBrightnessMode(config.AppBrightnessMode.amoled);

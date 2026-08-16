@@ -1,7 +1,10 @@
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+
 import '../models/card_data.dart';
 import '../models/card_group.dart';
 import '../services/card_group_storage.dart';
@@ -10,6 +13,7 @@ import '../services/ocr_service.dart';
 import '../providers/card_view_provider.dart';
 import '../providers/nfc_provider.dart';
 import '../providers/theme_provider.dart';
+import '../providers/profile_provider.dart';
 import '../widgets/card_tiles_grid.dart';
 import '../widgets/group_picker_sheet.dart';
 import '../widgets/stacked_card_grid.dart';
@@ -17,8 +21,6 @@ import '../widgets/infinite_card_deck.dart';
 import '../widgets/floating_add_menu.dart';
 import '../widgets/bank_logo.dart';
 import '../data/banks.dart';
-import '../utils/image_crop_helper.dart';
-import '../utils/image_utils.dart';
 import '../utils/nfc_availability_prompt.dart';
 import 'card_detail_screen.dart';
 import 'manual_add_card_screen.dart';
@@ -27,9 +29,17 @@ import 'card_edit_screen.dart';
 import 'nfc_scan_screen.dart';
 import 'settings_screen.dart';
 import '../theme/app_typography.dart';
+import '../theme/app_motion.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_shapes.dart';
+import '../theme/app_spacing.dart';
+import '../widgets/app_design_system.dart';
 
 class SavedCardsScreen extends StatefulWidget {
-  const SavedCardsScreen({super.key});
+  const SavedCardsScreen({super.key, this.cardLoader, this.groupLoader});
+
+  final Future<List<CardData>> Function()? cardLoader;
+  final Future<List<CardGroup>> Function()? groupLoader;
 
   @override
   State<SavedCardsScreen> createState() => _SavedCardsScreenState();
@@ -39,29 +49,29 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
     with TickerProviderStateMixin {
   final SecureCardStorage _cardStorage = SecureCardStorage();
   final CardGroupStorage _groupStorage = CardGroupStorage();
-  final OCRService _ocrService = OCRService();
   List<CardData> _cards = [];
   List<CardGroup> _groups = [];
   bool _isLoading = true;
   bool _showAddOptions = false;
-  bool _isProcessingImage = false;
-  
+  bool _hasShownUnreadableDetailsWarning = false;
+  final Set<String> _selectedCardIds = {};
+  final SearchController _searchController = SearchController();
+  String _searchQuery = '';
+
   Set<CardCategory>? _selectedCategories;
   Set<String>? _selectedCardholderNames;
   Set<String>? _selectedBankIds;
   Set<String>? _selectedNicknames;
   Set<String>? _selectedGroupIds;
-  
+
   Set<String> _allCardholderNames = {};
-  Map<String, String> _cardIdToCardholderName = {}; // Maps card ID to decrypted cardholder name
-  
+  Map<String, String> _cardIdToCardholderName =
+      {}; // Maps card ID to decrypted cardholder name
+
   Set<String> get _allBankIds {
-    return _cards
-        .where((c) => c.bankId != null)
-        .map((c) => c.bankId!)
-        .toSet();
+    return _cards.where((c) => c.bankId != null).map((c) => c.bankId!).toSet();
   }
-  
+
   Set<String> get _allNicknames {
     return _cards
         .where((c) => c.cardNickname != null && c.cardNickname!.isNotEmpty)
@@ -71,6 +81,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
 
   late AnimationController _blurController;
   late AnimationController _optionsController;
+  late AnimationController _headerController;
   late Animation<double> _blurAnimation;
   late List<Animation<double>> _slideAnimations;
   late List<Animation<double>> _fadeAnimations;
@@ -94,13 +105,22 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
       vsync: this,
     );
 
+    _headerController = AnimationController(
+      duration: AppMotion.emphasized,
+      vsync: this,
+    )..forward();
+
     _slideAnimations = List.generate(3, (index) {
       final start = index * 0.15;
       final end = start + 0.6;
       return Tween<double>(begin: 60.0, end: 0.0).animate(
         CurvedAnimation(
           parent: _optionsController,
-          curve: Interval(start, end.clamp(0.0, 1.0), curve: Curves.easeOutBack),
+          curve: Interval(
+            start,
+            end.clamp(0.0, 1.0),
+            curve: Curves.easeOutBack,
+          ),
         ),
       );
     });
@@ -126,7 +146,17 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
   void dispose() {
     _blurController.dispose();
     _optionsController.dispose();
+    _headerController.dispose();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (AppMotion.reduceMotion(context)) {
+      _headerController.value = 1;
+    }
   }
 
   Future<void> _loadCards() async {
@@ -134,10 +164,20 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
     setState(() => _isLoading = true);
 
     try {
-      final cards = await _cardStorage.loadCards();
-      final groups = await _groupStorage.loadGroups();
+      final cards =
+          await (widget.cardLoader?.call() ?? _cardStorage.loadCards());
+      final groups =
+          await (widget.groupLoader?.call() ?? _groupStorage.loadGroups());
+      var unreadableNameCount = 0;
       final names = await Future.wait(
-        cards.map((c) => c.getDecryptedCardholderName()).toList(),
+        cards.map((card) async {
+          try {
+            return await card.getDecryptedCardholderName();
+          } catch (_) {
+            unreadableNameCount++;
+            return null;
+          }
+        }),
       );
 
       final cardIdToName = <String, String>{};
@@ -153,56 +193,108 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
         _groups = groups;
         _allCardholderNames = names.whereType<String>().toSet();
         _cardIdToCardholderName = cardIdToName;
+        _selectedCardIds.removeWhere(
+          (id) => !cards.any((card) => card.id == id),
+        );
         _isLoading = false;
       });
+      if (unreadableNameCount > 0 && !_hasShownUnreadableDetailsWarning) {
+        _hasShownUnreadableDetailsWarning = true;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              unreadableNameCount == 1
+                  ? 'One card has encrypted details that could not be read. '
+                        'The card is still shown; restore a backup to recover '
+                        'those details.'
+                  : '$unreadableNameCount cards have encrypted details that '
+                        'could not be read. The cards are still shown; restore '
+                        'a backup to recover those details.',
+            ),
+            backgroundColor: AppSemanticColors.of(context).warning,
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to load cards: $e'),
-          backgroundColor: Colors.red,
+          backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
     }
   }
-  
+
   List<CardData> _getFilteredCards() {
     var filtered = _cards;
-    
-    if (_selectedCategories != null && _selectedCategories!.isNotEmpty) {
-      filtered = filtered.where((c) => _selectedCategories!.contains(c.cardCategory)).toList();
+
+    final query = _searchQuery.trim().toLowerCase();
+    if (query.isNotEmpty) {
+      filtered = filtered.where((card) {
+        final bankName = card.bankId == null
+            ? ''
+            : (Banks.getById(card.bankId!)?.name ?? card.bankId!);
+        final cardholder = card.id == null
+            ? ''
+            : (_cardIdToCardholderName[card.id] ?? '');
+        final searchable = [
+          bankName,
+          cardholder,
+          card.cardNickname ?? '',
+          card.categoryName,
+          card.lastFourDigits,
+        ].join(' ').toLowerCase();
+        return searchable.contains(query);
+      }).toList();
     }
-    
-    if (_selectedCardholderNames != null && _selectedCardholderNames!.isNotEmpty) {
+
+    if (_selectedCategories != null && _selectedCategories!.isNotEmpty) {
+      filtered = filtered
+          .where((c) => _selectedCategories!.contains(c.cardCategory))
+          .toList();
+    }
+
+    if (_selectedCardholderNames != null &&
+        _selectedCardholderNames!.isNotEmpty) {
       filtered = filtered.where((card) {
         if (card.id == null) return false;
         final cardholderName = _cardIdToCardholderName[card.id];
-        return cardholderName != null && _selectedCardholderNames!.contains(cardholderName);
+        return cardholderName != null &&
+            _selectedCardholderNames!.contains(cardholderName);
       }).toList();
     }
-    
+
     if (_selectedBankIds != null && _selectedBankIds!.isNotEmpty) {
-      filtered = filtered.where((c) => 
-        c.bankId != null && _selectedBankIds!.contains(c.bankId)
-      ).toList();
+      filtered = filtered
+          .where(
+            (c) => c.bankId != null && _selectedBankIds!.contains(c.bankId),
+          )
+          .toList();
     }
-    
+
     if (_selectedNicknames != null && _selectedNicknames!.isNotEmpty) {
-      filtered = filtered.where((c) => 
-        c.cardNickname != null && _selectedNicknames!.contains(c.cardNickname)
-      ).toList();
+      filtered = filtered
+          .where(
+            (c) =>
+                c.cardNickname != null &&
+                _selectedNicknames!.contains(c.cardNickname),
+          )
+          .toList();
     }
-    
+
     if (_selectedGroupIds != null && _selectedGroupIds!.isNotEmpty) {
-      filtered = filtered.where((c) => 
-        c.groupId != null && _selectedGroupIds!.contains(c.groupId)
-      ).toList();
+      filtered = filtered
+          .where(
+            (c) => c.groupId != null && _selectedGroupIds!.contains(c.groupId),
+          )
+          .toList();
     }
-    
+
     return filtered;
   }
-  
+
   void _clearFilters() {
     setState(() {
       _selectedCategories = null;
@@ -210,68 +302,210 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
       _selectedBankIds = null;
       _selectedNicknames = null;
       _selectedGroupIds = null;
+      _searchQuery = '';
+      _searchController.clear();
     });
   }
-  
+
   bool get _hasActiveFilters =>
+      _searchQuery.trim().isNotEmpty ||
       (_selectedCategories != null && _selectedCategories!.isNotEmpty) ||
-      (_selectedCardholderNames != null && _selectedCardholderNames!.isNotEmpty) ||
+      (_selectedCardholderNames != null &&
+          _selectedCardholderNames!.isNotEmpty) ||
       (_selectedBankIds != null && _selectedBankIds!.isNotEmpty) ||
       (_selectedNicknames != null && _selectedNicknames!.isNotEmpty) ||
       (_selectedGroupIds != null && _selectedGroupIds!.isNotEmpty);
-  
+
   int get _activeFilterCount {
-    int count = 0;
+    int count = _searchQuery.trim().isEmpty ? 0 : 1;
     if (_selectedCategories != null) count += _selectedCategories!.length;
     if (_selectedBankIds != null) count += _selectedBankIds!.length;
-    if (_selectedCardholderNames != null) count += _selectedCardholderNames!.length;
+    if (_selectedCardholderNames != null) {
+      count += _selectedCardholderNames!.length;
+    }
     if (_selectedNicknames != null) count += _selectedNicknames!.length;
     if (_selectedGroupIds != null) count += _selectedGroupIds!.length;
     return count;
   }
 
-  Future<void> _shareCard(CardData card) async {
+  String _shareTextForCard(CardData card) {
     final bank = card.bankId != null ? Banks.getById(card.bankId!) : null;
-    final cardholderName = card.id != null ? _cardIdToCardholderName[card.id] : null;
-    
+    final cardholderName = card.id != null
+        ? _cardIdToCardholderName[card.id]
+        : null;
+
     final cardInfo = StringBuffer();
-    cardInfo.writeln('Card Details:');
-    cardInfo.writeln('');
-    
     if (bank != null) {
       cardInfo.writeln('Bank: ${bank.name}');
     }
-    
+
     cardInfo.writeln('Type: ${card.categoryName}');
-    
+
     if (card.cardNickname != null && card.cardNickname!.isNotEmpty) {
       cardInfo.writeln('Nickname: ${card.cardNickname}');
     }
-    
+
     cardInfo.writeln('Card: ${card.maskedCardNumber}');
-    
+
     if (cardholderName != null && cardholderName.isNotEmpty) {
       cardInfo.writeln('Cardholder: $cardholderName');
     }
-    
-    cardInfo.writeln('');
-    cardInfo.writeln('⚠️ Shared from Cards Wallet');
+
+    return cardInfo.toString().trimRight();
+  }
+
+  Future<void> _shareCards(List<CardData> cards) async {
+    if (cards.isEmpty) return;
+
+    final cardInfo = StringBuffer();
+    for (var index = 0; index < cards.length; index++) {
+      if (index > 0) {
+        cardInfo.writeln('\n───\n');
+      }
+      cardInfo.writeln(
+        cards.length == 1 ? 'Card Details:' : 'Card ${index + 1}:',
+      );
+      cardInfo.writeln();
+      cardInfo.write(_shareTextForCard(cards[index]));
+    }
+    cardInfo.writeln('\n');
+    cardInfo.writeln('⚠️ Shared from CardVault');
     cardInfo.writeln('Note: Keep your card information secure');
-    
+
     try {
       await Share.share(
         cardInfo.toString(),
-        subject: 'Card Information',
+        subject: cards.length == 1
+            ? 'Card Information'
+            : '${cards.length} Card Details',
       );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to share: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
+    }
+  }
+
+  Future<void> _shareCard(CardData card) => _shareCards([card]);
+
+  bool get _isSelectionMode => _selectedCardIds.isNotEmpty;
+
+  List<CardData> get _selectedCards => _cards
+      .where((card) => card.id != null && _selectedCardIds.contains(card.id))
+      .toList();
+
+  bool _bulkSelectionAllowed() {
+    final viewProvider = context.read<CardViewProvider>();
+    return viewProvider.viewMode != CardViewMode.stackedGrid ||
+        viewProvider.stackBy != CardStackBy.custom;
+  }
+
+  void _startSelection(CardData card) {
+    if (card.id == null || !_bulkSelectionAllowed()) return;
+    HapticFeedback.mediumImpact();
+    setState(() => _selectedCardIds.add(card.id!));
+  }
+
+  void _toggleCardSelection(CardData card) {
+    if (card.id == null) return;
+    setState(() {
+      if (!_selectedCardIds.remove(card.id)) {
+        _selectedCardIds.add(card.id!);
+      }
+    });
+  }
+
+  void _toggleStackSelection(List<CardData> cards) {
+    final ids = cards.map((card) => card.id).whereType<String>().toSet();
+    if (ids.isEmpty) return;
+
+    setState(() {
+      if (ids.every(_selectedCardIds.contains)) {
+        _selectedCardIds.removeAll(ids);
+      } else {
+        _selectedCardIds.addAll(ids);
+      }
+    });
+  }
+
+  void _selectAllFilteredCards() {
+    setState(() {
+      _selectedCardIds.addAll(
+        _getFilteredCards().map((card) => card.id).whereType<String>(),
+      );
+    });
+  }
+
+  void _clearSelection() {
+    if (_selectedCardIds.isEmpty) return;
+    setState(_selectedCardIds.clear);
+  }
+
+  Future<void> _shareSelectedCards() async {
+    final cards = _selectedCards;
+    if (cards.isEmpty) return;
+    await _shareCards(cards);
+    if (mounted) _clearSelection();
+  }
+
+  Future<void> _deleteSelectedCards() async {
+    final cards = _selectedCards;
+    if (cards.isEmpty) return;
+
+    final count = cards.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete $count card${count == 1 ? '' : 's'}?'),
+        content: const Text(
+          'The selected cards and their photos will be permanently deleted. '
+          'This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      for (final card in cards) {
+        if (card.id != null) await _cardStorage.deleteCard(card.id!);
+      }
+      _clearSelection();
+      await _loadCards();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$count card${count == 1 ? '' : 's'} deleted'),
+          backgroundColor: AppSemanticColors.of(context).success,
+        ),
+      );
+    } catch (e) {
+      await _loadCards();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to delete selected cards: $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
     }
   }
 
@@ -286,9 +520,11 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
+          FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
             child: const Text('Delete'),
           ),
         ],
@@ -301,30 +537,36 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
         await _loadCards();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Card deleted'),
-              backgroundColor: Colors.green,
+            SnackBar(
+              content: const Text('Card deleted'),
+              backgroundColor: AppSemanticColors.of(context).success,
             ),
           );
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to delete: $e'), backgroundColor: Colors.red),
+            SnackBar(
+              content: Text('Failed to delete: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
           );
         }
       }
     }
   }
-  
+
   void _onCardTap(CardData card) async {
+    if (_isSelectionMode) {
+      _toggleCardSelection(card);
+      return;
+    }
+
     final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (context) => CardDetailScreen(
-          card: card,
-          cardIndex: _cards.indexOf(card),
-        ),
+        builder: (context) =>
+            CardDetailScreen(card: card, cardIndex: _cards.indexOf(card)),
       ),
     );
 
@@ -360,7 +602,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
               ? 'Removed from group'
               : 'Moved to ${selection.group!.name}',
         ),
-        backgroundColor: Colors.green,
+        backgroundColor: AppSemanticColors.of(context).success,
       ),
     );
   }
@@ -369,7 +611,10 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
     setState(() {
       _showAddOptions = !_showAddOptions;
     });
-    if (_showAddOptions) {
+    if (AppMotion.reduceMotion(context)) {
+      _blurController.value = _showAddOptions ? 1 : 0;
+      _optionsController.value = _showAddOptions ? 1 : 0;
+    } else if (_showAddOptions) {
       _blurController.forward();
       _optionsController.forward();
     } else {
@@ -408,115 +653,68 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
   }
 
   Future<void> _handleCameraScan() async {
-    final capturedPath = await Navigator.push<String>(
+    final ocrResult = await Navigator.push<OCRResult>(
       context,
       MaterialPageRoute(builder: (context) => const CardCameraScreen()),
     );
 
-    if (capturedPath == null || !mounted) return;
+    if (ocrResult == null || !mounted) return;
 
-    // Cropping to just the card measurably improves recognition; if the user
-    // skips it we fall back to the untouched image.
-    final cropped = await cropImageFile(
+    final cardData = await Navigator.push<CardData>(
       context,
-      capturedPath,
-      toolbarTitle: 'Crop to card',
-      startWithCardRatio: true,
+      MaterialPageRoute(
+        builder: (context) => CardEditScreen(ocrResult: ocrResult),
+      ),
     );
-    if (!mounted) return;
 
-    final imagePath = cropped?.path ?? capturedPath;
-
-    setState(() => _isProcessingImage = true);
-
-    try {
-      final quality = await ImageUtils.validateImageQuality(imagePath);
+    if (cardData != null && mounted) {
+      await _cardStorage.saveCard(cardData);
       if (!mounted) return;
-
-      if (!quality.isGoodQuality) {
-        setState(() => _isProcessingImage = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(quality.warning ??
-                'Image quality is poor. Please try a clearer photo.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      final ocrResult = await _ocrService.processImage(imagePath);
-
-      if (!mounted) return;
-
-      setState(() => _isProcessingImage = false);
-
-      if (ocrResult.cardNumber == null || ocrResult.cardNumber!.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not detect card number. Please try again or add manually.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      final cardData = await Navigator.push<CardData>(
-        context,
-        MaterialPageRoute(
-          builder: (context) => CardEditScreen(ocrResult: ocrResult),
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Card saved successfully!'),
+          backgroundColor: AppSemanticColors.of(context).success,
         ),
       );
-
-      if (cardData != null && mounted) {
-        await _cardStorage.saveCard(cardData);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Card saved successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        _loadCards();
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isProcessingImage = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to process image: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      _loadCards();
     }
   }
 
   Widget _buildCardsView() {
     final cards = _getFilteredCards();
+    final viewProvider = context.watch<CardViewProvider>();
 
-    switch (context.watch<CardViewProvider>().viewMode) {
+    switch (viewProvider.viewMode) {
       case CardViewMode.carousel:
         return InfiniteCardDeck(
           cards: cards,
           onCardTap: _onCardTap,
-          onCardLongPress: _deleteCard,
+          onCardLongPress: _startSelection,
           onCardShare: _shareCard,
           onCardDelete: _deleteCard,
+          selectedCardIds: _selectedCardIds,
+          selectionMode: _isSelectionMode,
         );
       case CardViewMode.grid:
         return CardTilesGrid(
           cards: cards,
           onCardTap: _onCardTap,
-          onCardLongPress: _changeCardGroup,
+          onCardLongPress: _startSelection,
+          selectedCardIds: _selectedCardIds,
+          selectionMode: _isSelectionMode,
         );
       case CardViewMode.stackedGrid:
-        final stackBy = context.watch<CardViewProvider>().stackBy;
+        final stackBy = viewProvider.stackBy;
+        final isCustom = stackBy == CardStackBy.custom;
         return StackedCardGrid(
           stacks: _buildStacks(cards, stackBy),
           axisKey: stackBy.name,
-          canGroupByDrag: stackBy == CardStackBy.custom,
+          canGroupByDrag: isCustom,
           onCardTap: _onCardTap,
-          onCardLongPress: _changeCardGroup,
+          onCardLongPress: isCustom ? _changeCardGroup : _startSelection,
+          selectedCardIds: _selectedCardIds,
+          selectionMode: !isCustom && _isSelectionMode,
+          onStackSelectionToggle: isCustom ? null : _toggleStackSelection,
           onDropOnStack: _handleDropOnStack,
         );
     }
@@ -565,7 +763,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Moved to $groupName'),
-        backgroundColor: Colors.green,
+        backgroundColor: AppSemanticColors.of(context).success,
       ),
     );
   }
@@ -582,15 +780,15 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
     for (final card in cards) {
       final ({String key, String title}) bucket = switch (axis) {
         CardStackBy.bank => (
-            key: card.bankId ?? unassignedKey,
-            title: card.bankId != null
-                ? (Banks.getById(card.bankId!)?.name ?? card.bankId!)
-                : 'No bank',
-          ),
+          key: card.bankId ?? unassignedKey,
+          title: card.bankId != null
+              ? (Banks.getById(card.bankId!)?.name ?? card.bankId!)
+              : 'No bank',
+        ),
         CardStackBy.type => (
-            key: card.cardCategory.name,
-            title: card.categoryName,
-          ),
+          key: card.cardCategory.name,
+          title: card.categoryName,
+        ),
         CardStackBy.cardholder => _cardholderBucket(card, unassignedKey),
         CardStackBy.custom => _customGroupBucket(card, unassignedKey),
       };
@@ -608,16 +806,18 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
     }
 
     final stacks = buckets.entries
-        .map((entry) => CardStack(
-              key: entry.key,
-              title: titles[entry.key]!,
-              cards: entry.value,
-              bankId: bankIds[entry.key],
-              groupId: axis == CardStackBy.custom && entry.key != unassignedKey
-                  ? entry.key
-                  : null,
-              icon: icons[entry.key],
-            ))
+        .map(
+          (entry) => CardStack(
+            key: entry.key,
+            title: titles[entry.key]!,
+            cards: entry.value,
+            bankId: bankIds[entry.key],
+            groupId: axis == CardStackBy.custom && entry.key != unassignedKey
+                ? entry.key
+                : null,
+            icon: icons[entry.key],
+          ),
+        )
         .toList();
 
     stacks.sort((a, b) {
@@ -649,13 +849,15 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
 
       for (final card in stack.cards) {
         final nickname = card.cardNickname;
-        result.add(CardStack(
-          key: card.id ?? 'card-${card.lastFourDigits}',
-          title: nickname != null && nickname.isNotEmpty
-              ? nickname
-              : card.categoryName,
-          cards: [card],
-        ));
+        result.add(
+          CardStack(
+            key: card.id ?? 'card-${card.lastFourDigits}',
+            title: nickname != null && nickname.isNotEmpty
+                ? nickname
+                : card.categoryName,
+            cards: [card],
+          ),
+        );
       }
     }
 
@@ -694,7 +896,13 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
-    
+    final viewMode = context.watch<CardViewProvider>().viewMode;
+    final filteredCards = _getFilteredCards();
+    final reserveBottomSpace =
+        viewMode == CardViewMode.carousel ||
+        _cards.isEmpty ||
+        filteredCards.isEmpty;
+
     return Scaffold(
       backgroundColor: themeProvider.getBackgroundColor(),
       body: SafeArea(
@@ -703,32 +911,32 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
             Column(
               children: [
                 _buildHeader(context),
-                if (context.watch<CardViewProvider>().viewMode ==
-                        CardViewMode.stackedGrid &&
+                if (!_isSelectionMode && _cards.isNotEmpty)
+                  _buildCollectionControls(),
+                if (viewMode == CardViewMode.stackedGrid &&
+                    !_isSelectionMode &&
                     _cards.isNotEmpty)
                   _buildStackByPills(),
                 Expanded(
                   child: _isLoading
                       ? const Center(child: CircularProgressIndicator())
                       : _cards.isEmpty
-                          ? _buildEmptyState()
-                          : _getFilteredCards().isEmpty
-                              ? _buildNoResultsState()
-                              : _buildCardsView(),
+                      ? _buildEmptyState()
+                      : filteredCards.isEmpty
+                      ? _buildNoResultsState()
+                      : _buildCardsView(),
                 ),
-                if (context.watch<CardViewProvider>().viewMode ==
-                    CardViewMode.carousel)
-                  const SizedBox(height: 100),
+                if (reserveBottomSpace) const SizedBox(height: 100),
               ],
             ),
             if (_showAddOptions) _buildBlurOverlay(),
-            if (_isProcessingImage) _buildProcessingOverlay(),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: _buildBottomSection(),
-            ),
+            if (!_isSelectionMode)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: _buildBottomSection(),
+              ),
           ],
         ),
       ),
@@ -739,15 +947,21 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
     return AnimatedBuilder(
       animation: _blurAnimation,
       builder: (context, child) {
-        return GestureDetector(
-          onTap: _toggleAddOptions,
-          child: BackdropFilter(
-            filter: ImageFilter.blur(
-              sigmaX: 8 * _blurAnimation.value,
-              sigmaY: 8 * _blurAnimation.value,
-            ),
-            child: Container(
-              color: Colors.black.withOpacity(0.3 * _blurAnimation.value),
+        return Semantics(
+          button: true,
+          label: 'Close add card menu',
+          child: GestureDetector(
+            onTap: _toggleAddOptions,
+            child: BackdropFilter(
+              filter: ImageFilter.blur(
+                sigmaX: 8 * _blurAnimation.value,
+                sigmaY: 8 * _blurAnimation.value,
+              ),
+              child: Container(
+                color: Colors.black.withValues(
+                  alpha: 0.3 * _blurAnimation.value,
+                ),
+              ),
             ),
           ),
         );
@@ -755,42 +969,15 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
     );
   }
 
-  Widget _buildProcessingOverlay() {
-    final themeProvider = context.watch<ThemeProvider>();
-    return Container(
-      color: Colors.black54,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-        child: Center(
-          child: Container(
-            padding: const EdgeInsets.all(32),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    themeProvider.getPrimaryColor(),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Processing Card...',
-                  style: AppTypography.title(color: Colors.black87),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildBottomSection() {
     final themeProvider = context.watch<ThemeProvider>();
+    final scheme = Theme.of(context).colorScheme;
+    final buttonColor = _showAddOptions
+        ? scheme.tertiaryContainer
+        : scheme.primaryContainer;
+    final buttonForeground = _showAddOptions
+        ? scheme.onTertiaryContainer
+        : scheme.onPrimaryContainer;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
@@ -798,31 +985,56 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
         mainAxisSize: MainAxisSize.min,
         children: [
           if (_showAddOptions) _buildPillOptions(),
-          GestureDetector(
-            onTap: _toggleAddOptions,
+          PressableScale(
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 52,
+              duration: AppMotion.resolve(context, AppMotion.standard),
+              curve: AppMotion.standardCurve,
+              width: _showAddOptions ? 112 : 52,
               height: 52,
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: themeProvider.isDarkMode
-                    ? (_showAddOptions ? Colors.grey.shade300 : Colors.white)
-                    : (_showAddOptions ? Colors.grey.shade700 : Colors.black),
-                border: Border.all(
-                  color: themeProvider.isDarkMode
-                      ? (_showAddOptions ? Colors.grey.shade300 : Colors.white)
-                      : (_showAddOptions ? Colors.grey.shade700 : Colors.black),
-                  width: 1.5,
-                ),
+                borderRadius: BorderRadius.circular(26),
+                boxShadow: [
+                  BoxShadow(
+                    color: scheme.shadow.withValues(alpha: 0.2),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
               ),
-              child: AnimatedRotation(
-                turns: _showAddOptions ? 0.125 : 0,
-                duration: const Duration(milliseconds: 200),
-                child: Icon(
-                  Icons.add,
-                  color: themeProvider.isDarkMode ? Colors.black : Colors.white,
-                  size: 22,
+              child: AppSurface(
+                padding: EdgeInsets.zero,
+                color: buttonColor,
+                foregroundColor: buttonForeground,
+                shape: AppShapes.pill,
+                onTap: _toggleAddOptions,
+                semanticLabel: _showAddOptions
+                    ? 'Close add card menu'
+                    : 'Add card',
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    AnimatedRotation(
+                      turns: _showAddOptions ? 0.125 : 0,
+                      duration: AppMotion.resolve(context, AppMotion.standard),
+                      curve: AppMotion.standardCurve,
+                      child: Icon(Icons.add, color: buttonForeground, size: 22),
+                    ),
+                    AnimatedSize(
+                      duration: AppMotion.resolve(context, AppMotion.standard),
+                      curve: AppMotion.standardCurve,
+                      child: _showAddOptions
+                          ? Padding(
+                              padding: const EdgeInsets.only(left: 7),
+                              child: Text(
+                                'Add…',
+                                style: AppTypography.label(
+                                  color: buttonForeground,
+                                ),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -852,13 +1064,13 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
       _OptionData(
         icon: Icons.camera_alt_outlined,
         label: 'Scan Card',
-        color: const Color(0xFF10B981),
+        color: AppSemanticColors.of(context).success,
         option: AddCardOption.scan,
       ),
       _OptionData(
         icon: Icons.contactless_outlined,
         label: 'Add via NFC',
-        color: const Color(0xFF0EA5E9),
+        color: AppSemanticColors.of(context).info,
         option: AddCardOption.nfc,
       ),
     ];
@@ -871,8 +1083,10 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
           children: List.generate(options.length, (index) {
             final opt = options[index];
             final animIndex = options.length - 1 - index;
-            final slideAnim = _slideAnimations[animIndex % _slideAnimations.length];
-            final fadeAnim = _fadeAnimations[animIndex % _fadeAnimations.length];
+            final slideAnim =
+                _slideAnimations[animIndex % _slideAnimations.length];
+            final fadeAnim =
+                _fadeAnimations[animIndex % _fadeAnimations.length];
 
             return Transform.translate(
               offset: Offset(0, slideAnim.value),
@@ -901,86 +1115,96 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
     required Color color,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              const Color(0xFF3A3A3C),
-              const Color(0xFF2C2C2E),
-              const Color(0xFF1C1C1E),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.3),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-            BoxShadow(
-              color: Colors.white.withOpacity(0.05),
-              blurRadius: 1,
-              offset: const Offset(0, -1),
-            ),
-          ],
-        ),
+    final scheme = Theme.of(context).colorScheme;
+    return PressableScale(
+      child: AppSurface(
+        onTap: onTap,
+        semanticLabel: label,
+        shape: AppShapes.pill,
+        color: scheme.surfaceContainerHigh,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: color, size: 18),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: AppTypography.label(color: Colors.white),
-            ),
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: AppSpacing.xs),
+            Text(label, style: AppTypography.label(color: scheme.onSurface)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildViewModeButton(ThemeProvider themeProvider) {
+  Widget _buildCollectionControls() {
     final viewProvider = context.watch<CardViewProvider>();
+    final scheme = Theme.of(context).colorScheme;
 
-    return PopupMenuButton<CardViewMode>(
-      tooltip: 'Change view',
-      icon: Icon(
-        viewProvider.viewMode.icon,
-        color: themeProvider.getPrimaryTextColor(),
-        size: 26,
-      ),
-      onSelected: viewProvider.setViewMode,
-      itemBuilder: (context) => CardViewMode.values
-          .map(
-            (mode) => PopupMenuItem(
-              value: mode,
-              child: Row(
-                children: [
-                  Icon(
-                    mode.icon,
-                    size: 20,
-                    color: mode == viewProvider.viewMode
-                        ? themeProvider.getPrimaryColor()
-                        : themeProvider.getSecondaryTextColor(),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<CardViewMode>(
+              expandedInsets: EdgeInsets.zero,
+              showSelectedIcon: false,
+              segments: [
+                for (final mode in CardViewMode.values)
+                  ButtonSegment(
+                    value: mode,
+                    icon: Icon(mode.icon, size: 18),
+                    label: Text(
+                      mode == CardViewMode.stackedGrid ? 'Stacks' : mode.label,
+                    ),
                   ),
-                  const SizedBox(width: 12),
-                  Text(mode.label),
-                ],
-              ),
+              ],
+              selected: {viewProvider.viewMode},
+              onSelectionChanged: (selection) {
+                viewProvider.setViewMode(selection.single);
+              },
             ),
-          )
-          .toList(),
+          ),
+          if (_hasActiveFilters) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Wrap(
+              spacing: AppSpacing.xs,
+              runSpacing: AppSpacing.xs,
+              children: [
+                if (_searchQuery.trim().isNotEmpty)
+                  InputChip(
+                    avatar: const Icon(Icons.search_rounded, size: 17),
+                    label: Text('“${_searchQuery.trim()}”'),
+                    onDeleted: () => setState(() {
+                      _searchQuery = '';
+                      _searchController.clear();
+                    }),
+                  ),
+                if (_activeFilterCount - (_searchQuery.trim().isEmpty ? 0 : 1) >
+                    0)
+                  InputChip(
+                    avatar: const Icon(Icons.filter_alt_rounded, size: 17),
+                    label: Text(
+                      '${_activeFilterCount - (_searchQuery.trim().isEmpty ? 0 : 1)} filters',
+                    ),
+                    onDeleted: _clearFilters,
+                  ),
+                ActionChip(
+                  avatar: const Icon(Icons.close_rounded, size: 17),
+                  label: const Text('Clear'),
+                  onPressed: _clearFilters,
+                  backgroundColor: scheme.surfaceContainerHigh,
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 
   /// Axis picker for the stacked grid: which attribute decides what gets stacked.
   Widget _buildStackByPills() {
-    final themeProvider = context.watch<ThemeProvider>();
     final viewProvider = context.watch<CardViewProvider>();
 
     return Container(
@@ -996,7 +1220,6 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
               child: _buildStackByPill(
                 axis: axis,
                 isSelected: viewProvider.stackBy == axis,
-                themeProvider: themeProvider,
                 onTap: () => viewProvider.setStackBy(axis),
               ),
             ),
@@ -1008,77 +1231,71 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
   Widget _buildStackByPill({
     required CardStackBy axis,
     required bool isSelected,
-    required ThemeProvider themeProvider,
     required VoidCallback onTap,
   }) {
-    final selectedColor = themeProvider.getPrimaryColor();
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 11),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? selectedColor.withOpacity(0.15)
-              : themeProvider.getSecondaryContainerColor(),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(
-            color: isSelected ? selectedColor : Colors.transparent,
-            width: 1.5,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              axis.icon,
-              size: 15,
-              color: isSelected
-                  ? selectedColor
-                  : themeProvider.getSecondaryTextColor(),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              axis.label,
-              style: AppTypography.label(
-                fontSize: 13,
-                color: isSelected
-                    ? selectedColor
-                    : themeProvider.getSecondaryTextColor(),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return ChoiceChip(
+      selected: isSelected,
+      avatar: Icon(axis.icon, size: 16),
+      label: Text(axis.label),
+      onSelected: (_) => onTap(),
     );
   }
 
   Widget _buildHeader(BuildContext context) {
+    if (_isSelectionMode) return _buildSelectionHeader();
+
     final themeProvider = context.watch<ThemeProvider>();
-    
+    final displayName = context.watch<ProfileProvider>().displayName;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
       child: Row(
         children: [
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Manage',
-                  style: AppTypography.display(
-                    color: themeProvider.getPrimaryTextColor(),
-                  ).copyWith(height: 1.1),
+            child: FadeTransition(
+              opacity: CurvedAnimation(
+                parent: _headerController,
+                curve: Curves.easeOut,
+              ),
+              child: SlideTransition(
+                position:
+                    Tween<Offset>(
+                      begin: const Offset(-0.08, 0),
+                      end: Offset.zero,
+                    ).animate(
+                      CurvedAnimation(
+                        parent: _headerController,
+                        curve: AppMotion.standardCurve,
+                      ),
+                    ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'CardVault',
+                      style: AppTypography.display(
+                        color: themeProvider.getPrimaryTextColor(),
+                      ).copyWith(height: 1.1),
+                    ),
+                    AnimatedSwitcher(
+                      duration: AppMotion.standard,
+                      child: Text(
+                        'Welcome back, $displayName',
+                        key: ValueKey(displayName),
+                        style: AppTypography.subtitle(
+                          color: themeProvider.getSecondaryTextColor(),
+                          fontSize: 16,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
-                Text(
-                  'Your Cards',
-                  style: AppTypography.displayLight(
-                    color: themeProvider.getSecondaryTextColor(),
-                  ).copyWith(height: 1.1),
-                ),
-              ],
+              ),
             ),
           ),
-          _buildViewModeButton(themeProvider),
+          _buildSearchAction(),
           IconButton(
             icon: Stack(
               children: [
@@ -1120,14 +1337,182 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
               color: themeProvider.getPrimaryTextColor(),
               size: 28,
             ),
-            onPressed: () {
-              Navigator.push(
+            onPressed: () async {
+              await Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (context) => const SettingsScreen(),
-                ),
+                MaterialPageRoute(builder: (context) => const SettingsScreen()),
               );
+              if (mounted) await _loadCards();
             },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchAction() {
+    final scheme = Theme.of(context).colorScheme;
+    return SearchAnchor(
+      searchController: _searchController,
+      viewHintText: 'Search cards, banks, or people',
+      viewOnChanged: (value) => setState(() => _searchQuery = value),
+      viewOnSubmitted: (value) {
+        setState(() => _searchQuery = value);
+        _searchController.closeView(value);
+      },
+      viewTrailing: [
+        if (_searchController.text.isNotEmpty)
+          IconButton(
+            tooltip: 'Clear search',
+            onPressed: () {
+              _searchController.clear();
+              setState(() => _searchQuery = '');
+            },
+            icon: const Icon(Icons.close_rounded),
+          ),
+      ],
+      suggestionsBuilder: (context, controller) {
+        final query = controller.text.trim().toLowerCase();
+        if (query.isEmpty) {
+          return [
+            ListTile(
+              leading: const Icon(Icons.search_rounded),
+              title: const Text('Search your cards'),
+              subtitle: const Text(
+                'Try a bank, nickname, person, or last four',
+              ),
+              enabled: false,
+            ),
+          ];
+        }
+
+        final matches = _cards
+            .where((card) {
+              final bank = card.bankId == null
+                  ? ''
+                  : (Banks.getById(card.bankId!)?.name ?? card.bankId!);
+              final holder = card.id == null
+                  ? ''
+                  : (_cardIdToCardholderName[card.id] ?? '');
+              return [
+                bank,
+                holder,
+                card.cardNickname ?? '',
+                card.categoryName,
+                card.lastFourDigits,
+              ].join(' ').toLowerCase().contains(query);
+            })
+            .take(8);
+
+        if (matches.isEmpty) {
+          return [
+            const ListTile(
+              leading: Icon(Icons.search_off_rounded),
+              title: Text('No matching cards'),
+              enabled: false,
+            ),
+          ];
+        }
+
+        return matches.map((card) {
+          final bank = card.bankId == null ? null : Banks.getById(card.bankId!);
+          return ListTile(
+            leading: CircleAvatar(
+              backgroundColor: scheme.secondaryContainer,
+              foregroundColor: scheme.onSecondaryContainer,
+              child: const Icon(Icons.credit_card_rounded),
+            ),
+            title: Text(card.cardNickname ?? bank?.name ?? card.categoryName),
+            subtitle: Text('${card.categoryName} •••• ${card.lastFourDigits}'),
+            onTap: () {
+              controller.closeView(query);
+              setState(() => _searchQuery = query);
+              _onCardTap(card);
+            },
+          );
+        });
+      },
+      builder: (context, controller) => IconButton(
+        tooltip: 'Search cards',
+        onPressed: controller.openView,
+        icon: Icon(
+          _searchQuery.isEmpty
+              ? Icons.search_rounded
+              : Icons.search_off_rounded,
+          color: scheme.onSurface,
+          size: 27,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSelectionHeader() {
+    final themeProvider = context.watch<ThemeProvider>();
+    final scheme = Theme.of(context).colorScheme;
+    final filteredIds = _getFilteredCards()
+        .map((card) => card.id)
+        .whereType<String>()
+        .toSet();
+    final allFilteredSelected =
+        filteredIds.isNotEmpty && filteredIds.every(_selectedCardIds.contains);
+
+    return AnimatedContainer(
+      duration: AppMotion.resolve(context, AppMotion.standard),
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 18),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      decoration: ShapeDecoration(
+        color: scheme.surfaceContainerHigh,
+        shape: AppShapes.large,
+        shadows: [
+          BoxShadow(
+            color: scheme.shadow.withValues(alpha: 0.16),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            key: const ValueKey('bulk-selection-close'),
+            tooltip: 'Close selection',
+            onPressed: _clearSelection,
+            icon: Icon(Icons.close, color: themeProvider.getPrimaryTextColor()),
+          ),
+          Expanded(
+            child: Text(
+              '${_selectedCardIds.length} selected',
+              key: const ValueKey('bulk-selection-count'),
+              style: AppTypography.appBarTitle(
+                color: themeProvider.getPrimaryTextColor(),
+              ),
+            ),
+          ),
+          IconButton(
+            key: const ValueKey('bulk-select-all'),
+            tooltip: allFilteredSelected ? 'All selected' : 'Select all',
+            onPressed: allFilteredSelected ? null : _selectAllFilteredCards,
+            icon: Icon(
+              Icons.select_all,
+              color: allFilteredSelected
+                  ? themeProvider.getSecondaryTextColor()
+                  : themeProvider.getPrimaryTextColor(),
+            ),
+          ),
+          IconButton(
+            key: const ValueKey('bulk-share'),
+            tooltip: 'Share selected',
+            onPressed: _shareSelectedCards,
+            icon: Icon(
+              Icons.share_outlined,
+              color: themeProvider.getPrimaryTextColor(),
+            ),
+          ),
+          IconButton(
+            key: const ValueKey('bulk-delete'),
+            tooltip: 'Delete selected',
+            onPressed: _deleteSelectedCards,
+            icon: Icon(Icons.delete_outline, color: scheme.error),
           ),
         ],
       ),
@@ -1136,7 +1521,8 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
 
   Widget _buildEmptyState() {
     final themeProvider = context.watch<ThemeProvider>();
-    
+    final scheme = Theme.of(context).colorScheme;
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -1144,7 +1530,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: themeProvider.getCardColor().withOpacity(0.5),
+              color: scheme.surfaceContainerHigh,
               shape: BoxShape.circle,
             ),
             child: Icon(
@@ -1171,10 +1557,11 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
       ),
     );
   }
-  
+
   Widget _buildNoResultsState() {
     final themeProvider = context.watch<ThemeProvider>();
-    
+    final scheme = Theme.of(context).colorScheme;
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -1195,49 +1582,79 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
           TextButton(
             onPressed: _clearFilters,
             child: Text(
-              'Clear Filters',
-              style: AppTypography.subtitle(
-                color: themeProvider.isDarkMode
-                    ? themeProvider.getPrimaryColor()
-                    : const Color(0xFF374151),
-              ),
+              'Clear filters',
+              style: AppTypography.subtitle(color: scheme.primary),
             ),
           ),
         ],
       ),
     );
   }
-  
+
   void _showComprehensiveFilterModal() {
     final themeProvider = context.read<ThemeProvider>();
-    
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _FilterModal(
-        themeProvider: themeProvider,
-        cards: _cards,
-        allCardholderNames: _allCardholderNames,
-        allBankIds: _allBankIds,
-        allNicknames: _allNicknames,
-        groups: _groups,
-        selectedCategories: _selectedCategories,
-        selectedCardholderNames: _selectedCardholderNames,
-        selectedBankIds: _selectedBankIds,
-        selectedNicknames: _selectedNicknames,
-        selectedGroupIds: _selectedGroupIds,
-        onApply: (categories, cardholders, banks, nicknames, groupIds) {
-          setState(() {
-            _selectedCategories = categories;
-            _selectedCardholderNames = cardholders;
-            _selectedBankIds = banks;
-            _selectedNicknames = nicknames;
-            _selectedGroupIds = groupIds;
-          });
-        },
-      ),
+    Widget buildFilter() => _FilterModal(
+      themeProvider: themeProvider,
+      cards: _cards,
+      allCardholderNames: _allCardholderNames,
+      allBankIds: _allBankIds,
+      allNicknames: _allNicknames,
+      groups: _groups,
+      selectedCategories: _selectedCategories,
+      selectedCardholderNames: _selectedCardholderNames,
+      selectedBankIds: _selectedBankIds,
+      selectedNicknames: _selectedNicknames,
+      selectedGroupIds: _selectedGroupIds,
+      onApply: (categories, cardholders, banks, nicknames, groupIds) {
+        setState(() {
+          _selectedCategories = categories;
+          _selectedCardholderNames = cardholders;
+          _selectedBankIds = banks;
+          _selectedNicknames = nicknames;
+          _selectedGroupIds = groupIds;
+        });
+      },
     );
+
+    if (MediaQuery.sizeOf(context).width >= 900) {
+      showGeneralDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: 'Close filters',
+        barrierColor: Theme.of(context).colorScheme.scrim
+            .withValues(alpha: 0.32),
+        transitionDuration: AppMotion.resolve(context, AppMotion.standard),
+        pageBuilder: (context, animation, secondaryAnimation) => Align(
+          alignment: Alignment.centerRight,
+          child: SizedBox(
+            width: 480,
+            height: double.infinity,
+            child: buildFilter(),
+          ),
+        ),
+        transitionBuilder: (context, animation, secondaryAnimation, child) =>
+            SlideTransition(
+              position:
+                  Tween<Offset>(
+                    begin: const Offset(1, 0),
+                    end: Offset.zero,
+                  ).animate(
+                    CurvedAnimation(
+                      parent: animation,
+                      curve: AppMotion.standardCurve,
+                    ),
+                  ),
+              child: child,
+            ),
+      );
+    } else {
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => buildFilter(),
+      );
+    }
   }
 }
 
@@ -1259,7 +1676,8 @@ class _FilterModal extends StatefulWidget {
     Set<String>?,
     Set<String>?,
     Set<String>?,
-  ) onApply;
+  )
+  onApply;
 
   const _FilterModal({
     required this.themeProvider,
@@ -1299,14 +1717,15 @@ class _FilterModalState extends State<_FilterModal> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final wide = MediaQuery.sizeOf(context).width >= 900;
     return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
+      height: wide ? double.infinity : MediaQuery.sizeOf(context).height * 0.85,
       decoration: BoxDecoration(
-        color: widget.themeProvider.getCardColor(),
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(24),
-          topRight: Radius.circular(24),
-        ),
+        color: scheme.surfaceContainerHigh,
+        borderRadius: wide
+            ? const BorderRadius.horizontal(left: Radius.circular(32))
+            : const BorderRadius.vertical(top: Radius.circular(32)),
       ),
       child: Column(
         children: [
@@ -1337,22 +1756,19 @@ class _FilterModalState extends State<_FilterModal> {
   }
 
   Widget _buildHeader() {
-    final hasAnySelection = _tempCategories.isNotEmpty || 
-                            _tempCardholders.isNotEmpty || 
-                            _tempBanks.isNotEmpty || 
-                            _tempNicknames.isNotEmpty ||
-                            _tempGroups.isNotEmpty;
-    
+    final scheme = Theme.of(context).colorScheme;
+    final hasAnySelection =
+        _tempCategories.isNotEmpty ||
+        _tempCardholders.isNotEmpty ||
+        _tempBanks.isNotEmpty ||
+        _tempNicknames.isNotEmpty ||
+        _tempGroups.isNotEmpty;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-            color: widget.themeProvider.isDarkMode
-                ? Colors.grey.shade800
-                : Colors.grey.shade200,
-            width: 1,
-          ),
+          bottom: BorderSide(color: scheme.outlineVariant, width: 1),
         ),
       ),
       child: Row(
@@ -1360,9 +1776,7 @@ class _FilterModalState extends State<_FilterModal> {
           Expanded(
             child: Text(
               'Filter Cards',
-              style: AppTypography.appBarTitle(
-                color: widget.themeProvider.getPrimaryTextColor(),
-              ),
+              style: AppTypography.appBarTitle(color: scheme.onSurface),
             ),
           ),
           if (hasAnySelection)
@@ -1376,19 +1790,10 @@ class _FilterModalState extends State<_FilterModal> {
                   _tempGroups.clear();
                 });
               },
-              child: Text(
-                'Clear All',
-                style: AppTypography.body(
-                  color: widget.themeProvider.getPrimaryColor(),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              child: const Text('Clear all'),
             ),
           IconButton(
-            icon: Icon(
-              Icons.close,
-              color: widget.themeProvider.getPrimaryTextColor(),
-            ),
+            icon: const Icon(Icons.close),
             onPressed: () => Navigator.pop(context),
           ),
         ],
@@ -1411,18 +1816,33 @@ class _FilterModalState extends State<_FilterModal> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            _buildCategoryChip(CardCategory.credit, 'Credit', Icons.credit_card),
-            _buildCategoryChip(CardCategory.debit, 'Debit', Icons.credit_card_outlined),
+            _buildCategoryChip(
+              CardCategory.credit,
+              'Credit',
+              Icons.credit_card,
+            ),
+            _buildCategoryChip(
+              CardCategory.debit,
+              'Debit',
+              Icons.credit_card_outlined,
+            ),
           ],
         ),
       ],
     );
   }
 
-  Widget _buildCategoryChip(CardCategory category, String label, IconData icon) {
+  Widget _buildCategoryChip(
+    CardCategory category,
+    String label,
+    IconData icon,
+  ) {
     final isSelected = _tempCategories.contains(category);
-    return GestureDetector(
-      onTap: () {
+    return FilterChip(
+      selected: isSelected,
+      avatar: Icon(icon, size: 18),
+      label: Text(label),
+      onSelected: (_) {
         setState(() {
           if (isSelected) {
             _tempCategories.remove(category);
@@ -1431,41 +1851,6 @@ class _FilterModalState extends State<_FilterModal> {
           }
         });
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? widget.themeProvider.getPrimaryColor()
-              : widget.themeProvider.getCardColor(),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected
-                ? widget.themeProvider.getPrimaryColor()
-                : widget.themeProvider.isDarkMode
-                    ? Colors.grey.shade700
-                    : const Color(0xFFD1D5DB),
-            width: 1.5,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 18,
-              color: isSelected ? Colors.white : widget.themeProvider.getPrimaryTextColor(),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: AppTypography.body(
-                color: isSelected ? Colors.white : widget.themeProvider.getPrimaryTextColor(),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -1474,8 +1859,9 @@ class _FilterModalState extends State<_FilterModal> {
         .map((c) => c.groupId)
         .whereType<String>()
         .toSet();
-    final groups =
-        widget.groups.where((g) => usedGroupIds.contains(g.id)).toList();
+    final groups = widget.groups
+        .where((g) => usedGroupIds.contains(g.id))
+        .toList();
     if (groups.isEmpty) return const SizedBox.shrink();
 
     return Column(
@@ -1499,8 +1885,11 @@ class _FilterModalState extends State<_FilterModal> {
 
   Widget _buildGroupChip(CardGroup group) {
     final isSelected = _tempGroups.contains(group.id);
-    return GestureDetector(
-      onTap: () {
+    return FilterChip(
+      selected: isSelected,
+      avatar: const Icon(Icons.folder_outlined, size: 18),
+      label: Text(group.name),
+      onSelected: (_) {
         setState(() {
           if (isSelected) {
             _tempGroups.remove(group.id);
@@ -1509,56 +1898,18 @@ class _FilterModalState extends State<_FilterModal> {
           }
         });
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? widget.themeProvider.getPrimaryColor()
-              : widget.themeProvider.getCardColor(),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected
-                ? widget.themeProvider.getPrimaryColor()
-                : widget.themeProvider.isDarkMode
-                    ? Colors.grey.shade700
-                    : const Color(0xFFD1D5DB),
-            width: 1.5,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.folder_outlined,
-              size: 16,
-              color: isSelected
-                  ? Colors.white
-                  : widget.themeProvider.getPrimaryTextColor(),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              group.name,
-              style: AppTypography.body(
-                color: isSelected
-                    ? Colors.white
-                    : widget.themeProvider.getPrimaryTextColor(),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
   Widget _buildBanksSection() {
     if (widget.allBankIds.isEmpty) return const SizedBox.shrink();
-    
-    final banks = widget.allBankIds
-        .map((id) => Banks.getById(id))
-        .whereType<BankInfo>()
-        .toList()
-      ..sort((a, b) => a.name.compareTo(b.name));
+
+    final banks =
+        widget.allBankIds
+            .map((id) => Banks.getById(id))
+            .whereType<BankInfo>()
+            .toList()
+          ..sort((a, b) => a.name.compareTo(b.name));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1581,8 +1932,16 @@ class _FilterModalState extends State<_FilterModal> {
 
   Widget _buildBankChip(BankInfo bank) {
     final isSelected = _tempBanks.contains(bank.id);
-    return GestureDetector(
-      onTap: () {
+    return FilterChip(
+      selected: isSelected,
+      avatar: BankLogo(
+        bank: bank,
+        size: 22,
+        useSmall: true,
+        showFallback: true,
+      ),
+      label: Text(bank.shortName),
+      onSelected: (_) {
         setState(() {
           if (isSelected) {
             _tempBanks.remove(bank.id);
@@ -1591,59 +1950,12 @@ class _FilterModalState extends State<_FilterModal> {
           }
         });
       },
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: isSelected
-                    ? widget.themeProvider.getPrimaryColor()
-                    : widget.themeProvider.isDarkMode
-                        ? Colors.grey.shade700
-                        : const Color(0xFFD1D5DB),
-                width: isSelected ? 3 : 1.5,
-              ),
-            ),
-            child: ClipOval(
-              child: Container(
-                color: widget.themeProvider.isDarkMode
-                    ? Colors.grey.shade800
-                    : Colors.grey.shade50,
-                padding: const EdgeInsets.all(8),
-                child: BankLogo(
-                  bank: bank,
-                  size: 32,
-                  useSmall: true,
-                  showFallback: true,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          SizedBox(
-            width: 56,
-            child: Text(
-              bank.name,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.overline(
-                color: widget.themeProvider.getSecondaryTextColor(),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
   Widget _buildCardholdersSection() {
     if (widget.allCardholderNames.isEmpty) return const SizedBox.shrink();
-    
+
     final cardholders = widget.allCardholderNames.toList()..sort();
 
     return Column(
@@ -1659,7 +1971,9 @@ class _FilterModalState extends State<_FilterModal> {
         Wrap(
           spacing: 12,
           runSpacing: 12,
-          children: cardholders.map((name) => _buildCardholderChip(name)).toList(),
+          children: cardholders
+              .map((name) => _buildCardholderChip(name))
+              .toList(),
         ),
       ],
     );
@@ -1668,9 +1982,14 @@ class _FilterModalState extends State<_FilterModal> {
   Widget _buildCardholderChip(String name) {
     final isSelected = _tempCardholders.contains(name);
     final initials = _getInitials(name);
-    
-    return GestureDetector(
-      onTap: () {
+
+    return FilterChip(
+      selected: isSelected,
+      avatar: CircleAvatar(
+        child: Text(initials, style: Theme.of(context).textTheme.labelSmall),
+      ),
+      label: Text(name),
+      onSelected: (_) {
         setState(() {
           if (isSelected) {
             _tempCardholders.remove(name);
@@ -1679,60 +1998,12 @@ class _FilterModalState extends State<_FilterModal> {
           }
         });
       },
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isSelected
-                  ? widget.themeProvider.getPrimaryColor()
-                  : widget.themeProvider.isDarkMode
-                      ? Colors.grey.shade800
-                      : Colors.grey.shade200,
-              border: Border.all(
-                color: isSelected
-                    ? widget.themeProvider.getPrimaryColor()
-                    : widget.themeProvider.isDarkMode
-                        ? Colors.grey.shade700
-                        : const Color(0xFFD1D5DB),
-                width: isSelected ? 3 : 1.5,
-              ),
-            ),
-            child: Center(
-              child: Text(
-                initials,
-                style: AppTypography.sectionTitle(
-                  color: isSelected
-                      ? Colors.white
-                      : widget.themeProvider.getPrimaryTextColor(),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          SizedBox(
-            width: 56,
-            child: Text(
-              name,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.overline(
-                color: widget.themeProvider.getSecondaryTextColor(),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
   Widget _buildNicknamesSection() {
     if (widget.allNicknames.isEmpty) return const SizedBox.shrink();
-    
+
     final nicknames = widget.allNicknames.toList()..sort();
 
     return Column(
@@ -1748,7 +2019,9 @@ class _FilterModalState extends State<_FilterModal> {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: nicknames.map((nickname) => _buildNicknameChip(nickname)).toList(),
+          children: nicknames
+              .map((nickname) => _buildNicknameChip(nickname))
+              .toList(),
         ),
       ],
     );
@@ -1756,8 +2029,11 @@ class _FilterModalState extends State<_FilterModal> {
 
   Widget _buildNicknameChip(String nickname) {
     final isSelected = _tempNicknames.contains(nickname);
-    return GestureDetector(
-      onTap: () {
+    return FilterChip(
+      selected: isSelected,
+      avatar: const Icon(Icons.label_outline, size: 18),
+      label: Text(nickname),
+      onSelected: (_) {
         setState(() {
           if (isSelected) {
             _tempNicknames.remove(nickname);
@@ -1766,82 +2042,30 @@ class _FilterModalState extends State<_FilterModal> {
           }
         });
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? widget.themeProvider.getPrimaryColor()
-              : widget.themeProvider.getCardColor(),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected
-                ? widget.themeProvider.getPrimaryColor()
-                : widget.themeProvider.isDarkMode
-                    ? Colors.grey.shade700
-                    : const Color(0xFFD1D5DB),
-            width: 1.5,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.label_outline,
-              size: 16,
-              color: isSelected ? Colors.white : widget.themeProvider.getPrimaryTextColor(),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              nickname,
-              style: AppTypography.body(
-                color: isSelected ? Colors.white : widget.themeProvider.getPrimaryTextColor(),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
   Widget _buildFooter() {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(
-            color: widget.themeProvider.isDarkMode
-                ? Colors.grey.shade800
-                : Colors.grey.shade200,
-            width: 1,
-          ),
-        ),
+        border: Border(top: BorderSide(color: scheme.outlineVariant, width: 1)),
       ),
       child: Row(
         children: [
           Expanded(
-            child: TextButton(
+            child: OutlinedButton(
               onPressed: () => Navigator.pop(context),
-              style: TextButton.styleFrom(
+              style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: widget.themeProvider.isDarkMode
-                    ? Colors.grey.shade800
-                    : Colors.grey.shade200,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
               ),
-              child: Text(
-                'Cancel',
-                style: AppTypography.title(
-                  color: widget.themeProvider.getPrimaryTextColor(),
-                ),
-              ),
+              child: const Text('Cancel'),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: ElevatedButton(
+            child: FilledButton(
               onPressed: () {
                 widget.onApply(
                   _tempCategories.isEmpty ? null : _tempCategories,
@@ -1852,17 +2076,10 @@ class _FilterModalState extends State<_FilterModal> {
                 );
                 Navigator.pop(context);
               },
-              style: ElevatedButton.styleFrom(
+              style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: widget.themeProvider.getPrimaryColor(),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
               ),
-              child: Text(
-                'Apply',
-                style: AppTypography.title(color: Colors.white),
-              ),
+              child: const Text('Apply filters'),
             ),
           ),
         ],

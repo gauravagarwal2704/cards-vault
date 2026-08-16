@@ -8,6 +8,7 @@ import '../providers/theme_provider.dart';
 import '../services/card_attachment_storage.dart';
 import '../theme/app_typography.dart';
 import '../utils/image_crop_helper.dart';
+
 import 'package:provider/provider.dart';
 
 class CardAttachmentsEditor extends StatelessWidget {
@@ -139,7 +140,7 @@ class CardAttachmentsEditor extends StatelessWidget {
                   onTap: () => _showPickOptions(context),
                   color: themeProvider.getSecondaryTextColor(),
                   background: themeProvider.isDarkMode
-                      ? Colors.white.withOpacity(0.05)
+                      ? Colors.white.withValues(alpha: 0.05)
                       : Colors.grey.shade100,
                 ),
               ...List.generate(existingIds.length, (i) {
@@ -149,10 +150,7 @@ class CardAttachmentsEditor extends StatelessWidget {
                     cardId: cardId,
                     attachmentId: existingIds[i],
                     onRemove: () => _removeExisting(i),
-                    onTap: () => _openViewer(
-                      context,
-                      existingIndex: i,
-                    ),
+                    onTap: () => _openViewer(context, existingIndex: i),
                   ),
                 );
               }),
@@ -162,10 +160,7 @@ class CardAttachmentsEditor extends StatelessWidget {
                   child: _PendingThumb(
                     file: pendingFiles[i],
                     onRemove: () => _removePending(i),
-                    onTap: () => _openViewer(
-                      context,
-                      pendingIndex: i,
-                    ),
+                    onTap: () => _openViewer(context, pendingIndex: i),
                   ),
                 );
               }),
@@ -200,10 +195,7 @@ class CardAttachmentsEditor extends StatelessWidget {
 
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => _AttachmentViewer(
-          items: items,
-          initialIndex: initial,
-        ),
+        builder: (_) => _AttachmentViewer(items: items, initialIndex: initial),
       ),
     );
   }
@@ -240,7 +232,7 @@ class CardAttachmentsGallery extends StatelessWidget {
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: attachmentIds.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemBuilder: (context, index) {
               return GestureDetector(
                 onTap: () {
@@ -304,7 +296,7 @@ class _AddTile extends StatelessWidget {
           decoration: BoxDecoration(
             color: background,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color.withOpacity(0.25)),
+            border: Border.all(color: color.withValues(alpha: 0.25)),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -412,10 +404,7 @@ class _EncryptedImage extends StatefulWidget {
   final String cardId;
   final String attachmentId;
 
-  const _EncryptedImage({
-    required this.cardId,
-    required this.attachmentId,
-  });
+  const _EncryptedImage({required this.cardId, required this.attachmentId});
 
   @override
   State<_EncryptedImage> createState() => _EncryptedImageState();
@@ -472,7 +461,12 @@ class _EncryptedImageState extends State<_EncryptedImage> {
         ),
       );
     }
-    return Image.memory(_bytes!, fit: BoxFit.cover, width: double.infinity, height: double.infinity);
+    return Image.memory(
+      _bytes!,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+    );
   }
 }
 
@@ -482,21 +476,16 @@ class _ViewerItem {
   final File? file;
 
   const _ViewerItem.existing({required this.cardId, required this.attachmentId})
-      : file = null;
+    : file = null;
 
-  const _ViewerItem.pending(this.file)
-      : cardId = null,
-        attachmentId = null;
+  const _ViewerItem.pending(this.file) : cardId = null, attachmentId = null;
 }
 
 class _AttachmentViewer extends StatefulWidget {
   final List<_ViewerItem> items;
   final int initialIndex;
 
-  const _AttachmentViewer({
-    required this.items,
-    required this.initialIndex,
-  });
+  const _AttachmentViewer({required this.items, required this.initialIndex});
 
   @override
   State<_AttachmentViewer> createState() => _AttachmentViewerState();

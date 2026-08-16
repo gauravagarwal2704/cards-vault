@@ -32,144 +32,147 @@ class AppTypography {
 
   /// Hero / brand lockup — home greeting
   static TextStyle display({Color? color, double? fontSize}) => style(
-        fontSize: fontSize ?? 32,
-        fontWeight: FontWeight.w700,
-        height: 1.15,
-        letterSpacing: -0.5,
-        color: color,
-      );
+    fontSize: fontSize ?? 32,
+    fontWeight: FontWeight.w700,
+    height: 1.15,
+    letterSpacing: -0.5,
+    color: color,
+  );
 
   /// Secondary display weight (e.g. "Cards" next to count)
   static TextStyle displayLight({Color? color, double? fontSize}) => style(
-        fontSize: fontSize ?? 32,
-        fontWeight: FontWeight.w400,
-        height: 1.15,
-        letterSpacing: -0.5,
-        color: color,
-      );
+    fontSize: fontSize ?? 32,
+    fontWeight: FontWeight.w400,
+    height: 1.15,
+    letterSpacing: -0.5,
+    color: color,
+  );
 
   /// Screen / page titles
   static TextStyle pageTitle({Color? color}) => style(
-        fontSize: 24,
-        fontWeight: FontWeight.w600,
-        height: 1.25,
-        letterSpacing: -0.3,
-        color: color,
-      );
+    fontSize: 24,
+    fontWeight: FontWeight.w600,
+    height: 1.25,
+    letterSpacing: -0.3,
+    color: color,
+  );
 
   /// App bar / sheet titles
   static TextStyle appBarTitle({Color? color}) => style(
-        fontSize: 20,
-        fontWeight: FontWeight.w600,
-        height: 1.3,
-        color: color,
-      );
+    fontSize: 20,
+    fontWeight: FontWeight.w600,
+    height: 1.3,
+    color: color,
+  );
 
   /// Section headers
   static TextStyle sectionTitle({Color? color}) => style(
-        fontSize: 18,
-        fontWeight: FontWeight.w600,
-        height: 1.3,
-        color: color,
-      );
+    fontSize: 18,
+    fontWeight: FontWeight.w600,
+    height: 1.3,
+    color: color,
+  );
 
   /// Dialog / bottom-sheet titles
   static TextStyle dialogTitle({Color? color}) => style(
-        fontSize: 18,
-        fontWeight: FontWeight.w600,
-        height: 1.3,
-        color: color,
-      );
+    fontSize: 18,
+    fontWeight: FontWeight.w600,
+    height: 1.3,
+    color: color,
+  );
 
   /// Card / list primary titles
   static TextStyle title({Color? color, double? fontSize}) => style(
-        fontSize: fontSize ?? 16,
-        fontWeight: FontWeight.w600,
-        height: 1.35,
-        color: color,
-      );
+    fontSize: fontSize ?? 16,
+    fontWeight: FontWeight.w600,
+    height: 1.35,
+    color: color,
+  );
 
   /// Emphasized name on card face
   static TextStyle cardName({Color? color, double? fontSize}) => style(
-        fontSize: fontSize ?? 14,
-        fontWeight: FontWeight.w700,
-        height: 1.2,
-        letterSpacing: 0.2,
-        color: color,
-      );
+    fontSize: fontSize ?? 14,
+    fontWeight: FontWeight.w700,
+    height: 1.2,
+    letterSpacing: 0.2,
+    color: color,
+  );
 
   /// Light secondary word on card face (e.g. "Debit")
   static TextStyle cardNameLight({Color? color, double? fontSize}) => style(
-        fontSize: fontSize ?? 14,
-        fontWeight: FontWeight.w300,
-        height: 1.2,
-        color: color,
-      );
+    fontSize: fontSize ?? 14,
+    fontWeight: FontWeight.w300,
+    height: 1.2,
+    color: color,
+  );
 
   /// List row primary text
   static TextStyle listItem({Color? color}) => style(
-        fontSize: 15,
-        fontWeight: FontWeight.w500,
-        height: 1.35,
-        color: color,
-      );
+    fontSize: 15,
+    fontWeight: FontWeight.w500,
+    height: 1.35,
+    color: color,
+  );
 
   /// Supporting / secondary body
   static TextStyle subtitle({Color? color, double? fontSize}) => style(
-        fontSize: fontSize ?? 14,
-        fontWeight: FontWeight.w400,
-        height: 1.4,
-        color: color,
-      );
+    fontSize: fontSize ?? 14,
+    fontWeight: FontWeight.w400,
+    height: 1.4,
+    color: color,
+  );
 
-  static TextStyle body({Color? color, double? fontSize, FontWeight? fontWeight}) =>
-      style(
-        fontSize: fontSize ?? 14,
-        fontWeight: fontWeight ?? FontWeight.w400,
-        height: 1.45,
-        color: color,
-      );
+  static TextStyle body({
+    Color? color,
+    double? fontSize,
+    FontWeight? fontWeight,
+  }) => style(
+    fontSize: fontSize ?? 14,
+    fontWeight: fontWeight ?? FontWeight.w400,
+    height: 1.45,
+    color: color,
+  );
 
   static TextStyle bodyLarge({Color? color}) => style(
-        fontSize: 16,
-        fontWeight: FontWeight.w400,
-        height: 1.45,
-        color: color,
-      );
+    fontSize: 16,
+    fontWeight: FontWeight.w400,
+    height: 1.45,
+    color: color,
+  );
 
   /// Form labels, chip text
   static TextStyle label({Color? color, double? fontSize}) => style(
-        fontSize: fontSize ?? 13,
-        fontWeight: FontWeight.w600,
-        height: 1.3,
-        letterSpacing: 0.1,
-        color: color,
-      );
+    fontSize: fontSize ?? 13,
+    fontWeight: FontWeight.w600,
+    height: 1.3,
+    letterSpacing: 0.1,
+    color: color,
+  );
 
   /// Captions, helper text
   static TextStyle caption({Color? color, double? fontSize}) => style(
-        fontSize: fontSize ?? 12,
-        fontWeight: FontWeight.w400,
-        height: 1.35,
-        color: color,
-      );
+    fontSize: fontSize ?? 12,
+    fontWeight: FontWeight.w400,
+    height: 1.35,
+    color: color,
+  );
 
   /// Small metadata / badges
   static TextStyle overline({Color? color, double? fontSize}) => style(
-        fontSize: fontSize ?? 10,
-        fontWeight: FontWeight.w500,
-        height: 1.2,
-        letterSpacing: 0.4,
-        color: color,
-      );
+    fontSize: fontSize ?? 10,
+    fontWeight: FontWeight.w500,
+    height: 1.2,
+    letterSpacing: 0.4,
+    color: color,
+  );
 
   static TextStyle button({Color? color, double? fontSize}) => style(
-        fontSize: fontSize ?? 15,
-        fontWeight: FontWeight.w600,
-        height: 1.2,
-        letterSpacing: 0.2,
-        color: color,
-      );
+    fontSize: fontSize ?? 15,
+    fontWeight: FontWeight.w600,
+    height: 1.2,
+    letterSpacing: 0.2,
+    color: color,
+  );
 
   /// Monospace for PAN / expiry / CVV
   static TextStyle mono({

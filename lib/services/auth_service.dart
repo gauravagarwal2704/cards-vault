@@ -29,7 +29,8 @@ class AuthService {
 
   Future<bool> isBiometricAvailable() async {
     try {
-      final bool canAuthenticateWithBiometrics = await _localAuth.canCheckBiometrics;
+      final bool canAuthenticateWithBiometrics =
+          await _localAuth.canCheckBiometrics;
       final bool canAuthenticate =
           canAuthenticateWithBiometrics || await _localAuth.isDeviceSupported();
       return canAuthenticate;
@@ -107,8 +108,7 @@ class AuthService {
     try {
       final bool deviceSupported = await _localAuth.isDeviceSupported();
       if (!deviceSupported) {
-        _lastErrorMessage =
-            'Set up a device lock (PIN, pattern, or biometrics) to view sensitive details';
+        _lastErrorMessage = 'Set up a device lock (PIN, pattern, or biometrics) to view sensitive details';
         return false;
       }
 
@@ -151,17 +151,20 @@ class AuthService {
     }
   }
 
-  Future<bool> authenticateWithRetry(BuildContext context, {String? reason}) async {
+  Future<bool> authenticateWithRetry(
+    BuildContext context, {
+    String? reason,
+  }) async {
     final bool deviceSupported = await isDeviceAuthAvailable();
 
     if (!deviceSupported) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
+          SnackBar(
+            content: const Text(
               'Set up a device lock (PIN, pattern, or biometrics) to continue',
             ),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }

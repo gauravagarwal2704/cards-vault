@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../theme/app_typography.dart';
 
 class TippingCard extends StatelessWidget {
@@ -48,7 +49,7 @@ class TippingCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: backgroundColor.withOpacity(0.35),
+            color: backgroundColor.withValues(alpha: 0.35),
             blurRadius: 20,
             spreadRadius: 0,
             offset: const Offset(0, 8),
@@ -67,13 +68,16 @@ class TippingCard extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: AppTypography.display(fontSize: 26, color: Colors.white),
+                  style: AppTypography.display(
+                    fontSize: 26,
+                    color: Colors.white,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
                   style: AppTypography.subtitle(
-                    color: Colors.white.withOpacity(0.75),
+                    color: Colors.white.withValues(alpha: 0.75),
                   ),
                 ),
               ],
@@ -84,14 +88,15 @@ class TippingCard extends StatelessWidget {
             bottom: -10,
             child: Text(
               indexString,
-              style: AppTypography.display(
-                fontSize: cardHeight * 0.55,
-                color: Colors.white.withOpacity(0.25),
-              ).copyWith(
-                fontWeight: FontWeight.w800,
-                height: 1.0,
-                letterSpacing: -2,
-              ),
+              style:
+                  AppTypography.display(
+                    fontSize: cardHeight * 0.55,
+                    color: Colors.white.withValues(alpha: 0.25),
+                  ).copyWith(
+                    fontWeight: FontWeight.w800,
+                    height: 1.0,
+                    letterSpacing: -2,
+                  ),
             ),
           ),
         ],

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../models/card_group.dart';
 import '../providers/theme_provider.dart';
 import '../services/card_group_storage.dart';
@@ -144,7 +145,10 @@ class _GroupPickerSheetState extends State<_GroupPickerSheet> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
           ),
         ],
       ),
@@ -320,7 +324,7 @@ class GroupSelectorField extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isDark
-                ? Colors.white.withOpacity(0.2)
+                ? Colors.white.withValues(alpha: 0.2)
                 : const Color(0xFFD1D5DB),
             width: 1.5,
           ),

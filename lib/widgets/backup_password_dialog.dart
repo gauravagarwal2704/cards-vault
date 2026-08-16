@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../theme/app_typography.dart';
 
 /// Asks for the password that protects a `.cwbak` file. Returns null when the
@@ -61,10 +62,7 @@ class _BackupPasswordDialogState extends State<BackupPasswordDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(
-        widget.title,
-        style: AppTypography.dialogTitle(),
-      ),
+      title: Text(widget.title, style: AppTypography.dialogTitle()),
       content: Form(
         key: _formKey,
         child: Column(
@@ -75,7 +73,9 @@ class _BackupPasswordDialogState extends State<BackupPasswordDialog> {
                   (widget.requireConfirm
                       ? 'Choose a password to encrypt this backup. You will need the same password to import on another phone.'
                       : 'Enter the password used when this backup was exported.'),
-              style: AppTypography.label().copyWith(fontWeight: FontWeight.w400),
+              style: AppTypography.label().copyWith(
+                fontWeight: FontWeight.w400,
+              ),
             ),
             const SizedBox(height: 16),
             TextFormField(
@@ -133,10 +133,7 @@ class _BackupPasswordDialogState extends State<BackupPasswordDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
-        TextButton(
-          onPressed: _submit,
-          child: Text(widget.confirmLabel),
-        ),
+        TextButton(onPressed: _submit, child: Text(widget.confirmLabel)),
       ],
     );
   }

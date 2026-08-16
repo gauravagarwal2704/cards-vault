@@ -1,21 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../providers/theme_provider.dart';
 import '../theme/app_typography.dart';
 
-enum AddCardOption {
-  nfc,
-  scan,
-  manual,
-}
+enum AddCardOption { nfc, scan, manual }
 
 class FloatingAddMenu extends StatefulWidget {
   final Function(AddCardOption) onOptionSelected;
 
-  const FloatingAddMenu({
-    super.key,
-    required this.onOptionSelected,
-  });
+  const FloatingAddMenu({super.key, required this.onOptionSelected});
 
   @override
   State<FloatingAddMenu> createState() => _FloatingAddMenuState();
@@ -35,9 +29,14 @@ class _FloatingAddMenuState extends State<FloatingAddMenu>
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
-    _rotationAnimation = Tween<double>(begin: 0.0, end: 0.125)
-        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
-    _scaleAnimation = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
+    _rotationAnimation = Tween<double>(
+      begin: 0.0,
+      end: 0.125,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    _scaleAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOut,
+    );
   }
 
   @override
@@ -147,7 +146,7 @@ class _FloatingAddMenuState extends State<FloatingAddMenu>
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: primary.withOpacity(0.4),
+              color: primary.withValues(alpha: 0.4),
               blurRadius: 16,
               offset: const Offset(0, 8),
             ),
@@ -177,7 +176,7 @@ class _FloatingAddMenuState extends State<FloatingAddMenu>
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: Colors.black.withValues(alpha: 0.1),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -190,7 +189,7 @@ class _FloatingAddMenuState extends State<FloatingAddMenu>
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(icon, color: color, size: 20),

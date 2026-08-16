@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+
 import 'wallet_card.dart';
 import '../utils/card_network_utils.dart';
 
@@ -30,21 +31,24 @@ class CardNetworkLogo extends StatelessWidget {
       return SizedBox(height: height, width: height * 1.5);
     }
 
-    final isDarkBackground = backgroundColor != null && 
-        backgroundColor!.computeLuminance() < 0.5;
-    
-    final isLightBackground = backgroundColor != null && 
-        backgroundColor!.computeLuminance() >= 0.5;
-    
-    final shouldApplyWhiteFilter = isDarkBackground && _shouldUseWhiteOnDark(network);
-    final shouldApplyDarkFilter = isLightBackground && _shouldUseDarkOnLight(network);
+    final isDarkBackground =
+        backgroundColor != null && backgroundColor!.computeLuminance() < 0.5;
+
+    final isLightBackground =
+        backgroundColor != null && backgroundColor!.computeLuminance() >= 0.5;
+
+    final shouldApplyWhiteFilter =
+        isDarkBackground && _shouldUseWhiteOnDark(network);
+    final shouldApplyDarkFilter =
+        isLightBackground && _shouldUseDarkOnLight(network);
 
     // Landscape assets (RuPay) blow past the caller's layout when sized by
     // height alone, so trade height away to respect the width budget.
     final widthCap = maxWidth ?? height * 1.6;
     final aspectRatio = _assetAspectRatio(network);
-    final renderHeight =
-        height * aspectRatio > widthCap ? widthCap / aspectRatio : height;
+    final renderHeight = height * aspectRatio > widthCap
+        ? widthCap / aspectRatio
+        : height;
 
     return SvgPicture.asset(
       logoPath,
@@ -53,8 +57,8 @@ class CardNetworkLogo extends StatelessWidget {
       colorFilter: shouldApplyWhiteFilter
           ? const ColorFilter.mode(Colors.white, BlendMode.srcIn)
           : shouldApplyDarkFilter
-              ? ColorFilter.mode(Colors.grey.shade800, BlendMode.srcIn)
-              : null,
+          ? ColorFilter.mode(Colors.grey.shade800, BlendMode.srcIn)
+          : null,
     );
   }
 
@@ -63,7 +67,7 @@ class CardNetworkLogo extends StatelessWidget {
   double _assetAspectRatio(CardNetwork network) {
     return network == CardNetwork.rupay ? 512 / 138 : 1.0;
   }
-  
+
   bool _shouldUseWhiteOnDark(CardNetwork network) {
     switch (network) {
       case CardNetwork.visa:
@@ -81,7 +85,7 @@ class CardNetworkLogo extends StatelessWidget {
         return false;
     }
   }
-  
+
   bool _shouldUseDarkOnLight(CardNetwork network) {
     switch (network) {
       case CardNetwork.visa:
@@ -107,7 +111,7 @@ class CardNetworkLogo extends StatelessWidget {
       case CardNetwork.mastercard:
         return 'assets/networks/mastercard.svg';
       case CardNetwork.amex:
-        return isInputField 
+        return isInputField
             ? 'assets/networks/amex-small.svg'
             : 'assets/networks/amex.svg';
       case CardNetwork.discover:
@@ -128,4 +132,3 @@ class CardNetworkLogo extends StatelessWidget {
     }
   }
 }
-

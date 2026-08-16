@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
 import '../models/card_data.dart';
 import '../models/card_group.dart';
 import '../data/banks.dart';
@@ -12,25 +13,29 @@ import '../services/ocr_service.dart';
 import '../services/secure_card_storage.dart';
 import '../services/encryption_service.dart';
 import '../services/card_attachment_storage.dart';
+import '../services/card_background_storage.dart';
 import '../widgets/bank_logo.dart';
 import '../widgets/card_attachments.dart';
+import '../widgets/card_background_picker.dart';
+import '../widgets/card_background_preview_swiper.dart';
+import '../widgets/card_background_surface.dart';
 import '../widgets/card_network_logo.dart';
 import '../widgets/group_picker_sheet.dart';
 import '../widgets/wallet_card.dart';
 import '../utils/card_formatter.dart';
+import '../utils/card_contrast.dart';
 import '../utils/card_network_utils.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_typography.dart';
+import '../theme/app_spacing.dart';
+import '../widgets/app_design_system.dart';
 
 class CardEditScreen extends StatefulWidget {
   final CardData? card;
   final OCRResult? ocrResult;
 
-  const CardEditScreen({
-    super.key,
-    this.card,
-    this.ocrResult,
-  }) : assert(card != null || ocrResult != null);
+  const CardEditScreen({super.key, this.card, this.ocrResult})
+    : assert(card != null || ocrResult != null);
 
   @override
   State<CardEditScreen> createState() => _CardEditScreenState();
@@ -41,6 +46,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
   final _cardStorage = SecureCardStorage();
   final _encryptionService = EncryptionService();
   final _attachmentStorage = CardAttachmentStorage();
+  final _backgroundStorage = CardBackgroundStorage();
   List<String> _existingAttachmentIds = [];
   List<File> _pendingAttachmentFiles = [];
   List<String> _removedAttachmentIds = [];
@@ -60,11 +66,25 @@ class _CardEditScreenState extends State<CardEditScreen> {
   CardGroup? _selectedGroup;
   CardDesign? _selectedDesign;
   CardDesignStyle _selectedStyle = CardDesignStyle.gradient;
+  CardBackgroundMode _backgroundMode = CardBackgroundMode.catalog;
+  Color _customGradientStart = const Color(0xFF2563EB);
+  Color _customGradientEnd = const Color(0xFF8B5CF6);
+  double _customGradientAngle = 135;
+  String? _customBackgroundImagePath;
+  double _backgroundImageBlur = 0;
   String? _detectedCardType;
   bool _isLoading = false;
   bool _isInitialized = false;
   Set<String> _existingCardholderNames = {};
   CardNetwork _detectedNetwork = CardNetwork.unknown;
+
+  double get _effectiveBackgroundImageBlur =>
+      (_backgroundMode == CardBackgroundMode.customImage &&
+              _customBackgroundImagePath?.isNotEmpty == true) ||
+          (_backgroundMode == CardBackgroundMode.catalog &&
+              _selectedDesign?.style == CardDesignStyle.image)
+      ? _backgroundImageBlur
+      : 0;
 
   @override
   void initState() {
@@ -81,7 +101,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
     _loadExistingCardholders();
     _initializeData();
   }
-  
+
   Future<void> _loadExistingCardholders() async {
     try {
       final cards = await _cardStorage.loadCards();
@@ -111,28 +131,45 @@ class _CardEditScreenState extends State<CardEditScreen> {
           : null;
 
       if (mounted) {
-      setState(() {
-        _detectedNetwork = CardNetworkUtils.detectNetwork(cardNumber);
-        _cardNumberController.text = _formatCardNumber(cardNumber);
-        _expiryController.text = expiry;
-        _cardholderController.text = cardholder ?? '';
-        _cvvController.text = cvv ?? '';
-        _nicknameController.text = card.cardNickname ?? '';
-        _accountNumberController.text = accountNumber ?? '';
-        _ifscCodeController.text = ifscCode ?? '';
-        _upiIdController.text = upiId ?? '';
-        _notesController.text = card.notes ?? '';
-        _existingAttachmentIds = List<String>.from(card.attachmentIds);
-        _cardCategory = card.cardCategory;
-        _selectedBank = card.bankId != null ? Banks.getById(card.bankId!) : null;
-        _selectedGroup = group;
-        _selectedDesign = card.designId != null ? CardDesigns.getById(card.designId!) : null;
-        if (_selectedDesign != null) {
-          _selectedStyle = _selectedDesign!.style;
-        }
-        _detectedCardType = card.cardType;
-        _isInitialized = true;
-      });
+        setState(() {
+          _detectedNetwork = CardNetworkUtils.detectNetwork(cardNumber);
+          _cardNumberController.text = _formatCardNumber(cardNumber);
+          _expiryController.text = expiry;
+          _cardholderController.text = cardholder ?? '';
+          _cvvController.text = cvv ?? '';
+          _nicknameController.text = card.cardNickname ?? '';
+          _accountNumberController.text = accountNumber ?? '';
+          _ifscCodeController.text = ifscCode ?? '';
+          _upiIdController.text = upiId ?? '';
+          _notesController.text = card.notes ?? '';
+          _existingAttachmentIds = List<String>.from(card.attachmentIds);
+          _cardCategory = card.cardCategory;
+          _selectedBank = card.bankId != null
+              ? Banks.getById(card.bankId!)
+              : null;
+          _selectedGroup = group;
+          _selectedDesign = card.designId != null
+              ? CardDesigns.getById(card.designId!)
+              : null;
+          if (_selectedDesign != null) {
+            _selectedStyle = _selectedDesign!.style;
+          }
+          _customGradientStart = Color(
+            card.customGradientStartColor ?? 0xFF2563EB,
+          );
+          _customGradientEnd = Color(card.customGradientEndColor ?? 0xFF8B5CF6);
+          _customGradientAngle = card.customGradientAngle;
+          _customBackgroundImagePath = card.customBackgroundImagePath;
+          _backgroundImageBlur = card.backgroundImageBlur;
+          if (card.customBackgroundImagePath != null) {
+            _backgroundMode = CardBackgroundMode.customImage;
+          } else if (card.customGradientStartColor != null &&
+              card.customGradientEndColor != null) {
+            _backgroundMode = CardBackgroundMode.customGradient;
+          }
+          _detectedCardType = card.cardType;
+          _isInitialized = true;
+        });
       }
     } else if (widget.ocrResult != null) {
       setState(() {
@@ -164,7 +201,10 @@ class _CardEditScreenState extends State<CardEditScreen> {
   }
 
   void _updateCardType() {
-    String cardNumber = _cardNumberController.text.replaceAll(RegExp(r'[\s\-]'), '');
+    String cardNumber = _cardNumberController.text.replaceAll(
+      RegExp(r'[\s\-]'),
+      '',
+    );
     if (cardNumber.isNotEmpty) {
       setState(() {
         _detectedCardType = _detectCardType(cardNumber);
@@ -180,32 +220,56 @@ class _CardEditScreenState extends State<CardEditScreen> {
     return CardNetworkUtils.formatCardNumber(text, _detectedNetwork);
   }
 
-  String _formatExpiry(String text) {
-    text = text.replaceAll('/', '');
-    if (text.length >= 2) {
-      return '${text.substring(0, 2)}/${text.substring(2)}';
-    }
-    return text;
-  }
-
   Future<void> _saveCard() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
+    String? newlyStoredBackgroundPath;
+    String? targetCardId;
     try {
       final cardNumber = _cardNumberController.text.replaceAll(' ', '');
       final expiry = _expiryController.text;
-      final cardholder = _cardholderController.text.isEmpty ? null : _cardholderController.text;
+      final cardholder = _cardholderController.text.isEmpty
+          ? null
+          : _cardholderController.text;
       final cvv = _cvvController.text.isEmpty ? null : _cvvController.text;
-      final nickname = _nicknameController.text.isEmpty ? null : _nicknameController.text;
-      final accountNumber = _accountNumberController.text.isEmpty ? null : _accountNumberController.text;
-      final ifscCode = _ifscCodeController.text.isEmpty ? null : _ifscCodeController.text;
-      final upiId = _upiIdController.text.isEmpty ? null : _upiIdController.text;
-      final notes = _notesController.text.isEmpty ? null : _notesController.text;
+      final nickname = _nicknameController.text.isEmpty
+          ? null
+          : _nicknameController.text;
+      final accountNumber = _accountNumberController.text.isEmpty
+          ? null
+          : _accountNumberController.text;
+      final ifscCode = _ifscCodeController.text.isEmpty
+          ? null
+          : _ifscCodeController.text;
+      final upiId = _upiIdController.text.isEmpty
+          ? null
+          : _upiIdController.text;
+      final notes = _notesController.text.isEmpty
+          ? null
+          : _notesController.text;
+      final cardIdForSave =
+          widget.card?.id ?? DateTime.now().microsecondsSinceEpoch.toString();
+      targetCardId = cardIdForSave;
+      var persistedBackgroundPath =
+          _backgroundMode == CardBackgroundMode.customImage
+          ? _customBackgroundImagePath
+          : null;
+      final originalBackgroundPath = widget.card?.customBackgroundImagePath;
+      if (persistedBackgroundPath != null &&
+          persistedBackgroundPath != originalBackgroundPath) {
+        newlyStoredBackgroundPath = await _backgroundStorage.saveBackground(
+          cardIdForSave,
+          File(persistedBackgroundPath),
+        );
+        persistedBackgroundPath = newlyStoredBackgroundPath;
+      }
 
       if (widget.card != null && widget.card!.id != null) {
-        final encryptedCardNumber = await _encryptionService.encrypt(cardNumber);
+        final encryptedCardNumber = await _encryptionService.encrypt(
+          cardNumber,
+        );
         final encryptedExpiry = await _encryptionService.encrypt(expiry);
         final encryptedCardholder = cardholder != null
             ? await _encryptionService.encrypt(cardholder)
@@ -224,8 +288,14 @@ class _CardEditScreenState extends State<CardEditScreen> {
             : null;
 
         final cardId = widget.card!.id!;
-        await _attachmentStorage.deleteAttachments(cardId, _removedAttachmentIds);
-        final newIds = await _attachmentStorage.saveAttachments(cardId, _pendingAttachmentFiles);
+        await _attachmentStorage.deleteAttachments(
+          cardId,
+          _removedAttachmentIds,
+        );
+        final newIds = await _attachmentStorage.saveAttachments(
+          cardId,
+          _pendingAttachmentFiles,
+        );
 
         final updatedCard = widget.card!.copyWith(
           encryptedCardNumber: encryptedCardNumber,
@@ -240,7 +310,28 @@ class _CardEditScreenState extends State<CardEditScreen> {
           cardCategory: _cardCategory,
           bankId: _selectedBank?.id,
           cardNickname: nickname,
-          designId: _selectedDesign?.id,
+          designId: _backgroundMode == CardBackgroundMode.catalog
+              ? _selectedDesign?.id
+              : null,
+          customGradientStartColor:
+              _backgroundMode == CardBackgroundMode.customGradient
+              ? _customGradientStart.toARGB32()
+              : null,
+          customGradientEndColor:
+              _backgroundMode == CardBackgroundMode.customGradient
+              ? _customGradientEnd.toARGB32()
+              : null,
+          customGradientAngle: _customGradientAngle,
+          customBackgroundImagePath: persistedBackgroundPath,
+          backgroundImageBlur: _effectiveBackgroundImageBlur,
+          clearDesign:
+              _backgroundMode != CardBackgroundMode.catalog ||
+              _selectedDesign == null,
+          clearCustomGradient:
+              _backgroundMode != CardBackgroundMode.customGradient,
+          clearCustomBackgroundImage:
+              _backgroundMode != CardBackgroundMode.customImage ||
+              persistedBackgroundPath == null,
           notes: notes,
           attachmentIds: [..._existingAttachmentIds, ...newIds],
           groupId: _selectedGroup?.id,
@@ -248,6 +339,14 @@ class _CardEditScreenState extends State<CardEditScreen> {
         );
 
         await _cardStorage.updateCard(updatedCard);
+
+        if (originalBackgroundPath != null &&
+            originalBackgroundPath != persistedBackgroundPath) {
+          await _backgroundStorage.deleteBackground(
+            cardIdForSave,
+            originalBackgroundPath,
+          );
+        }
 
         _removedAttachmentIds = [];
         _pendingAttachmentFiles = [];
@@ -265,13 +364,26 @@ class _CardEditScreenState extends State<CardEditScreen> {
           ifscCode: ifscCode,
           upiId: upiId,
           cardType: _detectedCardType ?? 'Unknown',
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          id: cardIdForSave,
           savedDate: DateTime.now(),
           readMethod: ReadMethod.camera,
           cardCategory: _cardCategory,
           bankId: _selectedBank?.id,
           cardNickname: nickname,
-          designId: _selectedDesign?.id,
+          designId: _backgroundMode == CardBackgroundMode.catalog
+              ? _selectedDesign?.id
+              : null,
+          customGradientStartColor:
+              _backgroundMode == CardBackgroundMode.customGradient
+              ? _customGradientStart.toARGB32()
+              : null,
+          customGradientEndColor:
+              _backgroundMode == CardBackgroundMode.customGradient
+              ? _customGradientEnd.toARGB32()
+              : null,
+          customGradientAngle: _customGradientAngle,
+          customBackgroundImagePath: persistedBackgroundPath,
+          backgroundImageBlur: _effectiveBackgroundImageBlur,
           notes: notes,
           attachmentIds: const [],
           groupId: _selectedGroup?.id,
@@ -282,9 +394,18 @@ class _CardEditScreenState extends State<CardEditScreen> {
         }
       }
     } catch (e) {
+      if (targetCardId != null && newlyStoredBackgroundPath != null) {
+        await _backgroundStorage.deleteBackground(
+          targetCardId,
+          newlyStoredBackgroundPath,
+        );
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save card: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Failed to save card: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
         );
       }
     } finally {
@@ -295,7 +416,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
-    
+
     if (!_isInitialized) {
       return Scaffold(
         backgroundColor: themeProvider.getBackgroundColor(),
@@ -322,261 +443,331 @@ class _CardEditScreenState extends State<CardEditScreen> {
       ),
       body: Form(
         key: _formKey,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (widget.ocrResult != null) _buildInfoBanner(),
-              if (widget.ocrResult != null) const SizedBox(height: 16),
-              _buildPreviewCard(),
-              const SizedBox(height: 24),
-              _buildSectionTitle('Card Information'),
-              const SizedBox(height: 12),
-              _buildCardNumberField(),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(child: _buildExpiryField()),
-                  const SizedBox(width: 16),
-                  Expanded(child: _buildCvvField()),
-                ],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >= 900;
+            if (!wide) {
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 680),
+                    child: _buildEditorFields(includePreview: true),
+                  ),
+                ),
+              );
+            }
+
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 430,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(AppSpacing.xl),
+                    child: Column(
+                      children: [
+                        if (widget.ocrResult != null) ...[
+                          _buildInfoBanner(),
+                          const SizedBox(height: AppSpacing.lg),
+                        ],
+                        _buildPreviewCard(),
+                        const SizedBox(height: AppSpacing.md),
+                        Text(
+                          'Preview updates as you edit',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const VerticalDivider(width: 1),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(AppSpacing.xl),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 680),
+                      child: _buildEditorFields(includePreview: false),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Material(
+          color: Theme.of(context).colorScheme.surfaceContainer,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.sm,
+              AppSpacing.lg,
+              AppSpacing.md,
+            ),
+            child: Align(
+              heightFactor: 1,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 680),
+                child: _buildSaveButton(),
               ),
-              const SizedBox(height: 16),
-              _buildCardholderField(),
-              const SizedBox(height: 24),
-              _buildSectionTitle('Card Type'),
-              const SizedBox(height: 12),
-              _buildCardCategorySelector(),
-              const SizedBox(height: 24),
-              _buildSectionTitle('Bank'),
-              const SizedBox(height: 12),
-              _buildBankSelector(),
-              const SizedBox(height: 24),
-              _buildSectionTitle('Group'),
-              const SizedBox(height: 12),
-              GroupSelectorField(
-                selectedGroup: _selectedGroup,
-                onChanged: (group) => setState(() => _selectedGroup = group),
-              ),
-              const SizedBox(height: 24),
-              _buildSectionTitle('Card Nickname'),
-              const SizedBox(height: 12),
-              _buildNicknameField(),
-              const SizedBox(height: 24),
-              _buildSectionTitle('Card Design'),
-              const SizedBox(height: 12),
-              _buildDesignStyleSelector(),
-              const SizedBox(height: 12),
-              _buildDesignSelector(),
-              const SizedBox(height: 24),
-              _buildSectionTitle('Additional Information'),
-              const SizedBox(height: 12),
-              _buildAdditionalInfoFields(),
-              const SizedBox(height: 32),
-              _buildSaveButton(),
-              const SizedBox(height: 24),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildInfoBanner() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue.shade200),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.info_outline, color: Colors.blue.shade700, size: 24),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Review and correct the extracted card details',
-              style: AppTypography.listItem(
-                color: Colors.blue.shade900,
-              ),
-            ),
-          ),
+  Widget _buildEditorFields({required bool includePreview}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (includePreview && widget.ocrResult != null) ...[
+          _buildInfoBanner(),
+          const SizedBox(height: AppSpacing.md),
         ],
-      ),
+        if (includePreview) ...[
+          _buildPreviewCard(),
+          const SizedBox(height: AppSpacing.xl),
+        ],
+        _buildSectionTitle('Card Information'),
+        const SizedBox(height: AppSpacing.sm),
+        _buildCardNumberField(),
+        const SizedBox(height: AppSpacing.md),
+        Row(
+          children: [
+            Expanded(child: _buildExpiryField()),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(child: _buildCvvField()),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _buildCardholderField(),
+        const SizedBox(height: AppSpacing.xl),
+        _buildSectionTitle('Card Type'),
+        const SizedBox(height: AppSpacing.sm),
+        _buildCardCategorySelector(),
+        const SizedBox(height: AppSpacing.xl),
+        _buildSectionTitle('Bank'),
+        const SizedBox(height: AppSpacing.sm),
+        _buildBankSelector(),
+        const SizedBox(height: AppSpacing.xl),
+        _buildSectionTitle('Group'),
+        const SizedBox(height: AppSpacing.sm),
+        GroupSelectorField(
+          selectedGroup: _selectedGroup,
+          onChanged: (group) => setState(() => _selectedGroup = group),
+        ),
+        const SizedBox(height: AppSpacing.xl),
+        _buildSectionTitle('Card Nickname'),
+        const SizedBox(height: AppSpacing.sm),
+        _buildNicknameField(),
+        const SizedBox(height: AppSpacing.xl),
+        _buildSectionTitle('Card Design'),
+        const SizedBox(height: AppSpacing.sm),
+        _buildCardBackgroundPicker(),
+        const SizedBox(height: AppSpacing.xl),
+        _buildSectionTitle('Additional Information'),
+        const SizedBox(height: AppSpacing.sm),
+        _buildAdditionalInfoFields(),
+        const SizedBox(height: AppSpacing.xxl),
+      ],
+    );
+  }
+
+  Widget _buildInfoBanner() {
+    final result = widget.ocrResult!;
+    final isConfident = !result.needsReview;
+    final confidence = (result.overallConfidence * 100).round();
+    return AppStatusMessage(
+      kind: isConfident ? AppStatusKind.success : AppStatusKind.warning,
+      icon: isConfident
+          ? Icons.verified_user_outlined
+          : Icons.rate_review_outlined,
+      title: isConfident
+          ? 'High-confidence on-device scan'
+          : 'Review the highlighted scan results',
+      message:
+          '$confidence% confidence'
+          '${result.supportingFrames > 1 ? ' · agreed across ${result.supportingFrames} frames' : ''}'
+          '${result.reviewWarnings.isEmpty ? '' : '\n${result.reviewWarnings.map((warning) => '• $warning').join('\n')}'}'
+          '\nProcessed on this device. The captured photo was discarded.',
     );
   }
 
   Widget _buildPreviewCard() {
     final themeProvider = context.watch<ThemeProvider>();
-    final primaryColor = _selectedDesign?.primaryColor ??
+    final primaryColor =
+        _selectedDesign?.primaryColor ??
         _selectedBank?.primaryColor ??
         themeProvider.getPrimaryColor();
-    final secondaryColor = _selectedDesign?.secondaryColor ??
+    final secondaryColor =
+        _selectedDesign?.secondaryColor ??
         _selectedBank?.secondaryColor ??
         themeProvider.getPrimaryContainerColor();
+    final foregroundColor = switch (_backgroundMode) {
+      CardBackgroundMode.catalog =>
+        _selectedDesign?.foregroundColor ??
+            CardContrast.bestForeground([primaryColor, secondaryColor]),
+      CardBackgroundMode.customGradient => CardContrast.bestForeground([
+        _customGradientStart,
+        _customGradientEnd,
+      ]),
+      CardBackgroundMode.customImage => CardContrast.ivory,
+    };
+    final secondaryForeground = CardContrast.secondary(foregroundColor);
+    final tertiaryForeground = CardContrast.tertiary(foregroundColor);
 
-    return AspectRatio(
-      aspectRatio: 1.586,
-      child: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [primaryColor, secondaryColor],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: primaryColor.withOpacity(0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Stack(
-          children: [
-            if (_selectedDesign?.hasCircles ?? false) _buildCircles(),
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Text(
-                                _cardCategory == CardCategory.credit ? 'Credit' : 'Debit',
-                                style: AppTypography.cardName(color: Colors.white),
-                              ),
-                              Text(
-                                'Card',
-                                style: AppTypography.cardNameLight(color: Colors.white70),
-                              ),
-                            ],
-                          ),
-                          if (_nicknameController.text.isNotEmpty)
+    return CardBackgroundPreviewSwiper(
+      enabled: _backgroundMode == CardBackgroundMode.catalog,
+      backgroundKey:
+          '${_backgroundMode.name}:${_selectedDesign?.id ?? 'default'}',
+      onCycle: _cyclePreviewBackground,
+      child: AspectRatio(
+        aspectRatio: 1.586,
+        child: CardBackgroundSurface(
+          design: _backgroundMode == CardBackgroundMode.catalog
+              ? _selectedDesign
+              : null,
+          customGradientStartColor:
+              _backgroundMode == CardBackgroundMode.customGradient
+              ? _customGradientStart.toARGB32()
+              : null,
+          customGradientEndColor:
+              _backgroundMode == CardBackgroundMode.customGradient
+              ? _customGradientEnd.toARGB32()
+              : null,
+          customGradientAngle: _customGradientAngle,
+          customBackgroundImagePath:
+              _backgroundMode == CardBackgroundMode.customImage
+              ? _customBackgroundImagePath
+              : null,
+          backgroundImageBlur: _effectiveBackgroundImageBlur,
+          fallbackPrimaryColor: primaryColor,
+          fallbackSecondaryColor: secondaryColor,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
                             Text(
-                              _nicknameController.text,
-                              style: AppTypography.caption(
-                                fontSize: 11,
-                                color: Colors.white60,
+                              _cardCategory == CardCategory.credit
+                                  ? 'Credit'
+                                  : 'Debit',
+                              style: AppTypography.cardName(
+                                color: foregroundColor,
                               ),
                             ),
-                        ],
-                      ),
-                      Icon(Icons.contactless, color: Colors.white.withOpacity(0.7), size: 24),
-                    ],
-                  ),
-                  const Spacer(),
-                  Text(
-                    _cardNumberController.text.isEmpty
-                        ? '**** **** **** ****'
-                        : _cardNumberController.text,
-                    style: AppTypography.mono(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Text(
-                        _cardholderController.text.isEmpty
-                            ? 'YOUR NAME'
-                            : _cardholderController.text.toUpperCase(),
-                        style: AppTypography.caption(
-                          color: Colors.white70,
-                        ).copyWith(fontWeight: FontWeight.w500),
-                      ),
-                      const Spacer(),
-                      Text(
-                        _expiryController.text.isEmpty ? 'MM/YY' : _expiryController.text,
-                        style: AppTypography.mono(
-                          fontSize: 12,
-                          color: Colors.white70,
+                            Text(
+                              'Card',
+                              style: AppTypography.cardNameLight(
+                                color: secondaryForeground,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
+                        if (_nicknameController.text.isNotEmpty)
+                          Text(
+                            _nicknameController.text,
+                            style: AppTypography.caption(
+                              fontSize: 11,
+                              color: tertiaryForeground,
+                            ),
+                          ),
+                      ],
+                    ),
+                    Icon(
+                      Icons.contactless,
+                      color: secondaryForeground,
+                      size: 24,
+                    ),
+                  ],
+                ),
+                const Spacer(),
+                Text(
+                  _cardNumberController.text.isEmpty
+                      ? '**** **** **** ****'
+                      : _cardNumberController.text,
+                  style: AppTypography.mono(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: foregroundColor,
+                    letterSpacing: 2,
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Text(
+                      _cardholderController.text.isEmpty
+                          ? 'YOUR NAME'
+                          : _cardholderController.text.toUpperCase(),
+                      style: AppTypography.caption(color: secondaryForeground)
+                          .copyWith(fontWeight: FontWeight.w500),
+                    ),
+                    const Spacer(),
+                    Text(
+                      _expiryController.text.isEmpty
+                          ? 'MM/YY'
+                          : _expiryController.text,
+                      style: AppTypography.mono(
+                        fontSize: 12,
+                        color: secondaryForeground,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ],
+          ),
         ),
-      ),
       ),
     );
   }
 
-  Widget _buildCircles() {
-    return Positioned.fill(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final circleSize = constraints.maxHeight * 0.5;
-          return Stack(
-            children: [
-              Positioned(
-                left: 16,
-                top: (constraints.maxHeight - circleSize) / 2,
-                child: Container(
-                  width: circleSize,
-                  height: circleSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFE85D3F).withOpacity(0.85),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 16 + circleSize * 0.5,
-                top: (constraints.maxHeight - circleSize) / 2,
-                child: Container(
-                  width: circleSize,
-                  height: circleSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFE85D3F).withOpacity(0.6),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
+  void _cyclePreviewBackground(int direction) {
+    if (_backgroundMode != CardBackgroundMode.catalog) return;
+
+    setState(() {
+      _selectedDesign = CardDesigns.cycle(
+        style: _selectedStyle,
+        currentId: _selectedDesign?.id,
+        direction: direction,
+      );
+    });
   }
 
   Widget _buildSectionTitle(String title) {
     final themeProvider = context.watch<ThemeProvider>();
     return Text(
       title,
-      style: AppTypography.title(
-        color: themeProvider.getPrimaryTextColor(),
-      ),
+      style: AppTypography.title(color: themeProvider.getPrimaryTextColor()),
     );
   }
 
   Widget _buildCardNumberField() {
     final themeProvider = context.watch<ThemeProvider>();
-    
+
     return TextFormField(
       controller: _cardNumberController,
       keyboardType: TextInputType.number,
-      inputFormatters: [
-        CardNumberFormatter(network: _detectedNetwork),
-      ],
+      inputFormatters: [CardNumberFormatter(network: _detectedNetwork)],
       decoration: _inputDecoration('Card Number', Icons.credit_card).copyWith(
         suffixIcon: Padding(
           padding: const EdgeInsets.all(8.0),
@@ -613,7 +804,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
 
   Widget _buildExpiryField() {
     final themeProvider = context.watch<ThemeProvider>();
-    
+
     return TextFormField(
       controller: _expiryController,
       keyboardType: TextInputType.number,
@@ -642,7 +833,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
     final themeProvider = context.watch<ThemeProvider>();
     final cvvLength = CardNetworkUtils.getCvvLength(_detectedNetwork);
     final cvvLabel = CardNetworkUtils.getCvvLabel(_detectedNetwork);
-    
+
     return TextFormField(
       controller: _cvvController,
       keyboardType: TextInputType.number,
@@ -673,14 +864,15 @@ class _CardEditScreenState extends State<CardEditScreen> {
 
   Widget _buildCardholderField() {
     final themeProvider = context.watch<ThemeProvider>();
-    
+
     return Autocomplete<String>(
       optionsBuilder: (TextEditingValue textEditingValue) {
         if (textEditingValue.text.isEmpty) {
           return const Iterable<String>.empty();
         }
-        return _existingCardholderNames.where((name) =>
-          name.toLowerCase().contains(textEditingValue.text.toLowerCase())
+        return _existingCardholderNames.where(
+          (name) =>
+              name.toLowerCase().contains(textEditingValue.text.toLowerCase()),
         );
       },
       optionsViewBuilder: (context, onSelected, options) {
@@ -693,7 +885,10 @@ class _CardEditScreenState extends State<CardEditScreen> {
               shadowColor: Colors.black26,
               borderRadius: BorderRadius.circular(12),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 200, maxWidth: 400),
+                constraints: const BoxConstraints(
+                  maxHeight: 200,
+                  maxWidth: 400,
+                ),
                 child: ListView.builder(
                   padding: EdgeInsets.zero,
                   shrinkWrap: true,
@@ -704,7 +899,10 @@ class _CardEditScreenState extends State<CardEditScreen> {
                       onTap: () => onSelected(option),
                       borderRadius: BorderRadius.circular(12),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                         child: Text(
                           option,
                           style: AppTypography.listItem(
@@ -729,7 +927,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
         if (controller.text != _cardholderController.text) {
           controller.text = _cardholderController.text;
         }
-        
+
         return TextFormField(
           controller: controller,
           focusNode: focusNode,
@@ -757,44 +955,31 @@ class _CardEditScreenState extends State<CardEditScreen> {
   }
 
   InputDecoration _inputDecoration(String hint, IconData? icon) {
-    final themeProvider = context.watch<ThemeProvider>();
-    final isDark = themeProvider.isDarkMode;
-    
+    final scheme = Theme.of(context).colorScheme;
+
     return InputDecoration(
       hintText: hint,
-      hintStyle: AppTypography.style(
-        color: isDark ? Colors.grey.shade600 : Colors.grey.shade400,
-      ),
-      prefixIcon: icon != null ? Icon(
-        icon, 
-        color: isDark ? Colors.grey.shade400 : Colors.grey.shade500,
-      ) : null,
+      hintStyle: AppTypography.style(color: scheme.onSurfaceVariant),
+      prefixIcon: icon != null
+          ? Icon(icon, color: scheme.onSurfaceVariant)
+          : null,
       filled: true,
       fillColor: Colors.transparent,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(
-          color: isDark ? Colors.white.withOpacity(0.2) : const Color(0xFFD1D5DB),
-          width: 1.5,
-        ),
+        borderSide: BorderSide(color: scheme.outline, width: 1.5),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(
-          color: isDark ? Colors.white.withOpacity(0.2) : const Color(0xFFD1D5DB),
-          width: 1.5,
-        ),
+        borderSide: BorderSide(color: scheme.outline, width: 1.5),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(
-          color: isDark ? themeProvider.getPrimaryColor() : const Color(0xFF374151),
-          width: 2,
-        ),
+        borderSide: BorderSide(color: scheme.primary, width: 2),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Colors.red, width: 1.5),
+        borderSide: BorderSide(color: scheme.error, width: 1.5),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
     );
@@ -811,30 +996,14 @@ class _CardEditScreenState extends State<CardEditScreen> {
   }
 
   Widget _buildCategoryChip(CardCategory category, String label) {
-    final themeProvider = context.watch<ThemeProvider>();
-    final isDark = themeProvider.isDarkMode;
     final isSelected = _cardCategory == category;
-    return GestureDetector(
-      onTap: () => setState(() => _cardCategory = category),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF374151) : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? const Color(0xFF374151) : (isDark ? Colors.white.withOpacity(0.2) : const Color(0xFFD1D5DB)),
-            width: 1.5,
-          ),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: AppTypography.label(
-              color: isSelected ? Colors.white : themeProvider.getPrimaryTextColor(),
-            ),
-          ),
-        ),
+    return ChoiceChip(
+      selected: isSelected,
+      label: SizedBox(
+        width: double.infinity,
+        child: Text(label, textAlign: TextAlign.center),
       ),
+      onSelected: (_) => setState(() => _cardCategory = category),
     );
   }
 
@@ -845,7 +1014,9 @@ class _CardEditScreenState extends State<CardEditScreen> {
       children: [
         Text(
           'Popular Banks',
-          style: AppTypography.caption(color: themeProvider.getSecondaryTextColor()),
+          style: AppTypography.caption(
+            color: themeProvider.getSecondaryTextColor(),
+          ),
         ),
         const SizedBox(height: 8),
         Wrap(
@@ -854,44 +1025,17 @@ class _CardEditScreenState extends State<CardEditScreen> {
           children: Banks.popular.map((bank) => _buildBankChip(bank)).toList(),
         ),
         const SizedBox(height: 16),
-        GestureDetector(
-          onTap: () => _showBankSelectionModal(),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.transparent,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: context.watch<ThemeProvider>().isDarkMode 
-                    ? Colors.white.withOpacity(0.2) 
-                    : const Color(0xFFD1D5DB),
-                width: 1.5,
-              ),
-            ),
-            child: Row(
-              children: [
-                if (_selectedBank != null) ...[
-                  BankLogo(bank: _selectedBank, size: 24, useSmall: true),
-                  const SizedBox(width: 12),
-                ],
-                Expanded(
-                  child: Text(
-                    _selectedBank?.name ?? 'Select Bank',
-                    style: AppTypography.bodyLarge(
-                      color: _selectedBank != null
-                          ? context.watch<ThemeProvider>().getPrimaryTextColor()
-                          : (context.watch<ThemeProvider>().isDarkMode 
-                              ? Colors.grey.shade600 
-                              : Colors.grey.shade400),
-                    ),
-                  ),
-                ),
-                Icon(
-                  Icons.arrow_drop_down,
-                  color: context.watch<ThemeProvider>().getSecondaryTextColor(),
-                ),
-              ],
-            ),
+        Material(
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(16),
+          clipBehavior: Clip.antiAlias,
+          child: ListTile(
+            onTap: _showBankSelectionModal,
+            leading: _selectedBank == null
+                ? const Icon(Icons.account_balance_outlined)
+                : BankLogo(bank: _selectedBank, size: 24, useSmall: true),
+            title: Text(_selectedBank?.name ?? 'Select bank'),
+            trailing: const Icon(Icons.arrow_drop_down),
           ),
         ),
       ],
@@ -899,134 +1043,46 @@ class _CardEditScreenState extends State<CardEditScreen> {
   }
 
   Widget _buildBankChip(BankInfo bank) {
-    final themeProvider = context.watch<ThemeProvider>();
-    final isDark = themeProvider.isDarkMode;
     final isSelected = _selectedBank?.id == bank.id;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedBank = bank),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected ? bank.primaryColor.withOpacity(0.15) : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected ? bank.primaryColor : (isDark ? Colors.white.withOpacity(0.2) : const Color(0xFFD1D5DB)),
-            width: 1.5,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            BankLogo(bank: bank, size: 18, useSmall: true),
-            const SizedBox(width: 6),
-            Text(
-              bank.shortName,
-              style: AppTypography.label(
-                fontSize: 11,
-                color: isSelected ? bank.primaryColor : themeProvider.getPrimaryTextColor(),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return ChoiceChip(
+      selected: isSelected,
+      avatar: BankLogo(bank: bank, size: 18, useSmall: true),
+      label: Text(bank.shortName),
+      onSelected: (_) => setState(() => _selectedBank = bank),
     );
   }
 
-  Widget _buildDesignStyleSelector() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: CardDesignStyle.values.map((style) {
-          final isSelected = _selectedStyle == style;
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _selectedStyle = style;
-                  _selectedDesign = null;
-                });
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  color: isSelected ? const Color(0xFF374151) : Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isSelected ? const Color(0xFF374151) : const Color(0xFFD1D5DB),
-                  ),
-                ),
-                child: Text(
-                  CardDesigns.getStyleName(style),
-                  style: AppTypography.label(
-                    color: isSelected ? Colors.white : Colors.black87,
-                  ).copyWith(fontWeight: FontWeight.w500),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
+  Widget _buildCardBackgroundPicker() {
+    return CardBackgroundPicker(
+      mode: _backgroundMode,
+      selectedStyle: _selectedStyle,
+      selectedDesign: _selectedDesign,
+      gradientStart: _customGradientStart,
+      gradientEnd: _customGradientEnd,
+      gradientAngle: _customGradientAngle,
+      customImagePath: _customBackgroundImagePath,
+      backgroundImageBlur: _backgroundImageBlur,
+      onModeChanged: (mode) => setState(() => _backgroundMode = mode),
+      onStyleChanged: (style) {
+        setState(() {
+          _selectedStyle = style;
+          _selectedDesign = null;
+        });
+      },
+      onDesignChanged: (design) => setState(() => _selectedDesign = design),
+      onGradientChanged: (start, end) {
+        setState(() {
+          _customGradientStart = start;
+          _customGradientEnd = end;
+        });
+      },
+      onGradientAngleChanged: (angle) =>
+          setState(() => _customGradientAngle = angle),
+      onCustomImageChanged: (path) =>
+          setState(() => _customBackgroundImagePath = path),
+      onBackgroundImageBlurChanged: (blur) =>
+          setState(() => _backgroundImageBlur = blur),
     );
-  }
-
-  Widget _buildDesignSelector() {
-    final designs = CardDesigns.getByStyle(_selectedStyle);
-    return SizedBox(
-      height: 80,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: designs.length,
-        itemBuilder: (context, index) {
-          final design = designs[index];
-          final isSelected = _selectedDesign?.id == design.id;
-          return Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: GestureDetector(
-              onTap: () => setState(() => _selectedDesign = design),
-              child: Container(
-                width: 100,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [design.primaryColor, design.secondaryColor],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  border: isSelected
-                      ? Border.all(color: Colors.white, width: 3)
-                      : null,
-                  boxShadow: isSelected
-                      ? [
-                          BoxShadow(
-                            color: design.primaryColor.withOpacity(0.4),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ]
-                      : null,
-                ),
-                child: Center(
-                  child: Text(
-                    design.name.split(' ').first,
-                    style: AppTypography.label(
-                      fontSize: 11,
-                      color: _isLightColor(design.primaryColor)
-                          ? Colors.black87
-                          : Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  bool _isLightColor(Color color) {
-    return color.computeLuminance() > 0.5;
   }
 
   Widget _buildAdditionalInfoFields() {
@@ -1034,7 +1090,10 @@ class _CardEditScreenState extends State<CardEditScreen> {
       children: [
         TextFormField(
           controller: _accountNumberController,
-          decoration: _inputDecoration('Bank Account Number', Icons.account_balance_wallet),
+          decoration: _inputDecoration(
+            'Bank Account Number',
+            Icons.account_balance_wallet,
+          ),
           keyboardType: TextInputType.number,
           inputFormatters: [
             FilteringTextInputFormatter.digitsOnly,
@@ -1070,13 +1129,16 @@ class _CardEditScreenState extends State<CardEditScreen> {
           existingIds: _existingAttachmentIds,
           pendingFiles: _pendingAttachmentFiles,
           onExistingChanged: (ids) {
-            final removed = _existingAttachmentIds.where((id) => !ids.contains(id));
+            final removed = _existingAttachmentIds.where(
+              (id) => !ids.contains(id),
+            );
             setState(() {
               _removedAttachmentIds.addAll(removed);
               _existingAttachmentIds = ids;
             });
           },
-          onPendingChanged: (files) => setState(() => _pendingAttachmentFiles = files),
+          onPendingChanged: (files) =>
+              setState(() => _pendingAttachmentFiles = files),
         ),
       ],
     );
@@ -1086,9 +1148,13 @@ class _CardEditScreenState extends State<CardEditScreen> {
     final TextEditingController searchController = TextEditingController();
     List<BankInfo> filteredBanks = Banks.allSorted;
     const double bankTileExtent = 60;
-    final selectedIndex = filteredBanks.indexWhere((b) => b.id == _selectedBank?.id);
+    final selectedIndex = filteredBanks.indexWhere(
+      (b) => b.id == _selectedBank?.id,
+    );
     final scrollController = ScrollController(
-      initialScrollOffset: selectedIndex > 0 ? selectedIndex * bankTileExtent : 0,
+      initialScrollOffset: selectedIndex > 0
+          ? selectedIndex * bankTileExtent
+          : 0,
     );
     final themeProvider = context.read<ThemeProvider>();
     final sheetColor = themeProvider.getCardColor();
@@ -1114,7 +1180,9 @@ class _CardEditScreenState extends State<CardEditScreen> {
                 height: MediaQuery.of(context).size.height * 0.75,
                 decoration: BoxDecoration(
                   color: sheetColor,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
                 ),
                 child: Column(
                   children: [
@@ -1125,7 +1193,9 @@ class _CardEditScreenState extends State<CardEditScreen> {
                           Expanded(
                             child: Text(
                               'Select Bank',
-                              style: AppTypography.sectionTitle(color: primaryText),
+                              style: AppTypography.sectionTitle(
+                                color: primaryText,
+                              ),
                             ),
                           ),
                           IconButton(
@@ -1146,7 +1216,11 @@ class _CardEditScreenState extends State<CardEditScreen> {
                           final bank = filteredBanks[index];
                           final isSelected = _selectedBank?.id == bank.id;
                           return ListTile(
-                            leading: BankLogo(bank: bank, size: 32, useSmall: true),
+                            leading: BankLogo(
+                              bank: bank,
+                              size: 32,
+                              useSmall: true,
+                            ),
                             title: Text(
                               bank.name,
                               style: AppTypography.body(color: primaryText),
@@ -1190,7 +1264,10 @@ class _CardEditScreenState extends State<CardEditScreen> {
                             borderRadius: BorderRadius.circular(16),
                             borderSide: BorderSide(color: accent, width: 2),
                           ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
                         ),
                         onChanged: (value) {
                           setModalState(() {
@@ -1198,9 +1275,15 @@ class _CardEditScreenState extends State<CardEditScreen> {
                               filteredBanks = Banks.allSorted;
                             } else {
                               filteredBanks = Banks.allSorted
-                                  .where((bank) =>
-                                      bank.name.toLowerCase().contains(value.toLowerCase()) ||
-                                      bank.shortName.toLowerCase().contains(value.toLowerCase()))
+                                  .where(
+                                    (bank) =>
+                                        bank.name.toLowerCase().contains(
+                                          value.toLowerCase(),
+                                        ) ||
+                                        bank.shortName.toLowerCase().contains(
+                                          value.toLowerCase(),
+                                        ),
+                                  )
                                   .toList();
                             }
                           });
@@ -1221,29 +1304,23 @@ class _CardEditScreenState extends State<CardEditScreen> {
   }
 
   Widget _buildSaveButton() {
+    final scheme = Theme.of(context).colorScheme;
     return SizedBox(
       width: double.infinity,
-      height: 54,
-      child: ElevatedButton(
+      height: 56,
+      child: FilledButton.icon(
         onPressed: _isLoading ? null : _saveCard,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF374151),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          elevation: 0,
-        ),
-        child: _isLoading
-            ? const SizedBox(
+        icon: _isLoading
+            ? SizedBox(
                 width: 24,
                 height: 24,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-              )
-            : Text(
-                widget.card != null ? 'Save Changes' : 'Confirm & Save',
-                style: AppTypography.button(
-                  fontSize: 16,
-                  color: Colors.white,
+                child: CircularProgressIndicator(
+                  color: scheme.onPrimary,
+                  strokeWidth: 2,
                 ),
-              ),
+              )
+            : const Icon(Icons.check_rounded),
+        label: Text(widget.card != null ? 'Save changes' : 'Confirm & save'),
       ),
     );
   }

@@ -4,12 +4,14 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
 import '../data/banks.dart';
 import '../data/card_designs.dart';
 import '../models/card_data.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_typography.dart';
 import 'bank_logo.dart';
+import 'card_background_surface.dart';
 import 'card_tiles_grid.dart';
 
 const _tileAspectRatio = 1.586;
@@ -74,6 +76,9 @@ class StackedCardGrid extends StatefulWidget {
 
   final ValueChanged<CardData>? onCardTap;
   final ValueChanged<CardData>? onCardLongPress;
+  final Set<String> selectedCardIds;
+  final bool selectionMode;
+  final ValueChanged<List<CardData>>? onStackSelectionToggle;
 
   /// A loose card was dropped onto [target]. Adding to an existing group and
   /// creating a new one are both the caller's business.
@@ -86,6 +91,9 @@ class StackedCardGrid extends StatefulWidget {
     this.canGroupByDrag = false,
     this.onCardTap,
     this.onCardLongPress,
+    this.selectedCardIds = const {},
+    this.selectionMode = false,
+    this.onStackSelectionToggle,
     this.onDropOnStack,
   });
 
@@ -120,6 +128,11 @@ class _StackedCardGridState extends State<StackedCardGrid> {
   }
 
   Future<void> _onStackTap(CardStack stack) async {
+    if (widget.selectionMode) {
+      widget.onStackSelectionToggle?.call(stack.cards);
+      return;
+    }
+
     if (stack.isSingle) {
       widget.onCardTap?.call(stack.cards.first);
       return;
@@ -127,7 +140,7 @@ class _StackedCardGridState extends State<StackedCardGrid> {
 
     final action = await showDialog<_StackAction>(
       context: context,
-      barrierColor: Colors.black.withOpacity(0.45),
+      barrierColor: Colors.black.withValues(alpha: 0.45),
       builder: (_) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
         child: _StackDialog(stack: stack),
@@ -136,7 +149,11 @@ class _StackedCardGridState extends State<StackedCardGrid> {
 
     if (action == null) return;
     if (action.isLongPress) {
-      widget.onCardLongPress?.call(action.card);
+      if (widget.onStackSelectionToggle != null) {
+        widget.onStackSelectionToggle?.call(stack.cards);
+      } else {
+        widget.onCardLongPress?.call(action.card);
+      }
     } else {
       widget.onCardTap?.call(action.card);
     }
@@ -152,25 +169,21 @@ class _StackedCardGridState extends State<StackedCardGrid> {
       switchOutCurve: Curves.easeIn,
       layoutBuilder: (currentChild, previousChildren) => Stack(
         alignment: Alignment.topCenter,
-        children: [
-          ...previousChildren,
-          if (currentChild != null) currentChild,
-        ],
+        children: [...previousChildren, ?currentChild],
       ),
-      child: KeyedSubtree(
-        key: ValueKey(widget.axisKey),
-        child: _buildGrid(),
-      ),
+      child: KeyedSubtree(key: ValueKey(widget.axisKey), child: _buildGrid()),
     );
   }
 
   Widget _buildGrid() {
     final rows = <List<CardStack>>[];
     for (var i = 0; i < widget.stacks.length; i += 2) {
-      rows.add(widget.stacks.sublist(
-        i,
-        i + 2 > widget.stacks.length ? widget.stacks.length : i + 2,
-      ));
+      rows.add(
+        widget.stacks.sublist(
+          i,
+          i + 2 > widget.stacks.length ? widget.stacks.length : i + 2,
+        ),
+      );
     }
 
     return SingleChildScrollView(
@@ -182,33 +195,38 @@ class _StackedCardGridState extends State<StackedCardGrid> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (var i = 0; i < 2; i++)
-                  Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.only(right: i == 0 ? _tileSpacing : 0),
-                      child: i < rows[rowIndex].length
-                          ? _RegroupEntry(
-                              key: ValueKey(rows[rowIndex][i].key),
-                              index: rowIndex * 2 + i,
-                              child: _StackTile(
-                                stack: rows[rowIndex][i],
-                                onTap: () => _onStackTap(rows[rowIndex][i]),
-                                onCardLongPress: widget.onCardLongPress,
-                                canGroupByDrag: widget.canGroupByDrag,
-                                onDropOnStack: widget.onDropOnStack,
-                                onDragStarted: _onDragStarted,
-                                onDragUpdate: _onDragUpdate,
-                                onDragEnded: _onDragEnded,
-                              ),
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                  ),
+                Expanded(child: _buildTile(rows[rowIndex][0], rowIndex * 2)),
+                const SizedBox(width: _tileSpacing),
+                Expanded(
+                  child: rows[rowIndex].length > 1
+                      ? _buildTile(rows[rowIndex][1], rowIndex * 2 + 1)
+                      : const SizedBox.shrink(),
+                ),
               ],
             ),
             const SizedBox(height: _rowSpacing),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildTile(CardStack stack, int index) {
+    return _RegroupEntry(
+      key: ValueKey(stack.key),
+      index: index,
+      child: _StackTile(
+        stack: stack,
+        onTap: () => _onStackTap(stack),
+        onCardLongPress: widget.onCardLongPress,
+        selectedCardIds: widget.selectedCardIds,
+        selectionMode: widget.selectionMode,
+        onStackSelectionToggle: widget.onStackSelectionToggle,
+        canGroupByDrag: widget.canGroupByDrag,
+        onDropOnStack: widget.onDropOnStack,
+        onDragStarted: _onDragStarted,
+        onDragUpdate: _onDragUpdate,
+        onDragEnded: _onDragEnded,
       ),
     );
   }
@@ -221,11 +239,7 @@ class _RegroupEntry extends StatefulWidget {
   final int index;
   final Widget child;
 
-  const _RegroupEntry({
-    super.key,
-    required this.index,
-    required this.child,
-  });
+  const _RegroupEntry({super.key, required this.index, required this.child});
 
   @override
   State<_RegroupEntry> createState() => _RegroupEntryState();
@@ -271,10 +285,7 @@ class _RegroupEntryState extends State<_RegroupEntry>
           opacity: t,
           child: Transform.translate(
             offset: Offset(0, (1 - t) * 18),
-            child: Transform.scale(
-              scale: 0.95 + t * 0.05,
-              child: child,
-            ),
+            child: Transform.scale(scale: 0.95 + t * 0.05, child: child),
           ),
         );
       },
@@ -409,6 +420,9 @@ class _StackTile extends StatelessWidget {
   final CardStack stack;
   final VoidCallback onTap;
   final ValueChanged<CardData>? onCardLongPress;
+  final Set<String> selectedCardIds;
+  final bool selectionMode;
+  final ValueChanged<List<CardData>>? onStackSelectionToggle;
   final bool canGroupByDrag;
   final void Function(CardData card, CardStack target)? onDropOnStack;
   final ValueChanged<BuildContext>? onDragStarted;
@@ -419,6 +433,9 @@ class _StackTile extends StatelessWidget {
     required this.stack,
     required this.onTap,
     this.onCardLongPress,
+    this.selectedCardIds = const {},
+    this.selectionMode = false,
+    this.onStackSelectionToggle,
     this.canGroupByDrag = false,
     this.onDropOnStack,
     this.onDragStarted,
@@ -427,6 +444,12 @@ class _StackTile extends StatelessWidget {
   });
 
   bool get _isDragSource => canGroupByDrag && stack.isLooseCard;
+
+  bool get _isSelected =>
+      stack.cards.isNotEmpty &&
+      stack.cards.every(
+        (card) => card.id != null && selectedCardIds.contains(card.id),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -448,8 +471,9 @@ class _StackTile extends StatelessWidget {
 
   Widget _buildTile(BuildContext context, {required bool isDropTarget}) {
     final themeProvider = context.watch<ThemeProvider>();
-    final peekLayers =
-        (stack.cards.length - 1).clamp(0, _maxPeekLayers).toInt();
+    final peekLayers = (stack.cards.length - 1)
+        .clamp(0, _maxPeekLayers)
+        .toInt();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -471,12 +495,8 @@ class _StackTile extends StatelessWidget {
                       top: (peekLayers - layer) * _peekOffset,
                       left: layer * 6.0,
                       right: layer * 6.0,
-                      height:
-                          (layer * _peekOffset + 24).clamp(0.0, cardHeight),
-                      child: _PeekLayer(
-                        card: stack.cards[layer],
-                        depth: layer,
-                      ),
+                      height: (layer * _peekOffset + 24).clamp(0.0, cardHeight),
+                      child: _PeekLayer(card: stack.cards[layer], depth: layer),
                     ),
                   Positioned(
                     top: peekLayers * _peekOffset,
@@ -548,9 +568,13 @@ class _StackTile extends StatelessWidget {
     final tile = CardTile(
       card: card,
       onTap: (_) => onTap(),
-      onLongPress: _isDragSource
+      onLongPress: onStackSelectionToggle != null
+          ? (_) => onStackSelectionToggle?.call(stack.cards)
+          : _isDragSource
           ? null
           : (stack.isSingle ? onCardLongPress : null),
+      isSelected: _isSelected,
+      selectionMode: selectionMode,
     );
 
     if (!_isDragSource) return tile;
@@ -564,7 +588,7 @@ class _StackTile extends StatelessWidget {
       },
       onDragUpdate: (details) => onDragUpdate?.call(details, cardSize),
       onDragEnd: (_) => onDragEnded?.call(),
-      onDraggableCanceled: (_, __) => onDragEnded?.call(),
+      onDraggableCanceled: (_, _) => onDragEnded?.call(),
       feedback: _DragFeedback(card: card, size: cardSize),
       childWhenDragging: Opacity(opacity: 0.3, child: tile),
       child: tile,
@@ -596,7 +620,7 @@ class _DragFeedback extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.32),
+                  color: Colors.black.withValues(alpha: 0.32),
                   blurRadius: 24,
                   offset: const Offset(0, 12),
                 ),
@@ -621,7 +645,7 @@ class _DropHighlight extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: color.withOpacity(0.18),
+        color: color.withValues(alpha: 0.18),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: color, width: 2.5),
       ),
@@ -651,12 +675,17 @@ class _PeekLayer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bank = card.bankId != null ? Banks.getById(card.bankId!) : null;
-    final design =
-        card.designId != null ? CardDesigns.getById(card.designId!) : null;
-    final primaryColor =
-        design?.primaryColor ?? bank?.primaryColor ?? Colors.grey.shade600;
-    final secondaryColor =
-        design?.secondaryColor ?? bank?.secondaryColor ?? Colors.grey.shade700;
+    final design = card.designId != null
+        ? CardDesigns.getById(card.designId!)
+        : null;
+    final primaryColor = card.customGradientStartColor != null
+        ? Color(card.customGradientStartColor!)
+        : design?.primaryColor ?? bank?.primaryColor ?? Colors.grey.shade600;
+    final secondaryColor = card.customGradientEndColor != null
+        ? Color(card.customGradientEndColor!)
+        : design?.secondaryColor ??
+              bank?.secondaryColor ??
+              Colors.grey.shade700;
 
     final sigma = depth * 1.1;
 
@@ -670,22 +699,17 @@ class _PeekLayer extends StatelessWidget {
           sigmaY: sigma,
           tileMode: TileMode.decal,
         ),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [primaryColor, secondaryColor],
-            ),
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.12),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
+        child: CardBackgroundSurface(
+          design: design,
+          customGradientStartColor: card.customGradientStartColor,
+          customGradientEndColor: card.customGradientEndColor,
+          customGradientAngle: card.customGradientAngle,
+          customBackgroundImagePath: card.customBackgroundImagePath,
+          backgroundImageBlur: card.backgroundImageBlur,
+          fallbackPrimaryColor: primaryColor,
+          fallbackSecondaryColor: secondaryColor,
+          borderRadius: BorderRadius.circular(14),
+          child: const SizedBox.expand(),
         ),
       ),
     );

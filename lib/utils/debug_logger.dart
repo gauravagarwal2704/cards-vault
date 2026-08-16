@@ -1,8 +1,14 @@
 import 'dart:developer' as developer;
+
 import 'package:flutter/foundation.dart';
 
 class DebugLogger {
-  static void log(String location, String message, Map<String, dynamic> data, String hypothesisId) {
+  static void log(
+    String location,
+    String message,
+    Map<String, dynamic> data,
+    String hypothesisId,
+  ) {
     if (kDebugMode) {
       final sanitizedData = _sanitizeData(data);
       developer.log(
@@ -16,17 +22,18 @@ class DebugLogger {
 
   static Map<String, dynamic> _sanitizeData(Map<String, dynamic> data) {
     final sanitized = <String, dynamic>{};
-    
+
     data.forEach((key, value) {
       final lowerKey = key.toLowerCase();
-      
+
       if (lowerKey.contains('pan') || lowerKey.contains('cardnumber')) {
         if (value is String && value.length >= 4) {
           sanitized[key] = '****${value.substring(value.length - 4)}';
         } else {
           sanitized[key] = '****';
         }
-      } else if (lowerKey.contains('expiry') || lowerKey.contains('expirydate')) {
+      } else if (lowerKey.contains('expiry') ||
+          lowerKey.contains('expirydate')) {
         sanitized[key] = '**/**';
       } else if (lowerKey.contains('name') || lowerKey.contains('cardholder')) {
         if (value is String && value.isNotEmpty) {
@@ -49,7 +56,7 @@ class DebugLogger {
         sanitized[key] = value;
       }
     });
-    
+
     return sanitized;
   }
 }

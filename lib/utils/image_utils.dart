@@ -1,16 +1,23 @@
 import 'dart:io';
 import 'dart:math';
+
 import 'package:image/image.dart' as img;
+
+import '../models/card_scan_capture.dart';
 
 class ImageQuality {
   final double blurScore;
   final double brightness;
+  final double contrast;
+  final double glareRatio;
   final bool isGoodQuality;
   final String? warning;
 
   ImageQuality({
     required this.blurScore,
     required this.brightness,
+    this.contrast = 0,
+    this.glareRatio = 0,
     required this.isGoodQuality,
     this.warning,
   });
@@ -20,85 +27,59 @@ class ImageUtils {
   static const double minBlurScore = 100.0;
   static const double minBrightness = 40.0;
   static const double maxBrightness = 220.0;
+  static const double minContrast = 24.0;
+  static const double maxGlareRatio = 0.18;
   static const int minWidth = 800;
   static const int minHeight = 500;
 
-  static Future<img.Image?> preprocessForOCR(String imagePath, {Rect? cardFrame, bool forEmbossedText = false}) async {
-    try {
-      final bytes = await File(imagePath).readAsBytes();
-      img.Image? image = img.decodeImage(bytes);
-      
-      if (image == null) return null;
-
-      if (cardFrame != null) {
-        image = cropToCardFrame(image, cardFrame);
-      }
-
-      if (forEmbossedText) {
-        // Special preprocessing for embossed card numbers
-        // 1. Increase contrast significantly to make shadows visible
-        image = enhanceContrast(image, contrast: 2.5);
-        
-        // 2. Convert to grayscale
-        image = img.grayscale(image);
-        
-        // 3. Apply edge detection to highlight embossed edges
-        image = sharpenImage(image, amount: 2.0);
-        
-        // 4. Adjust brightness
-        image = adjustBrightness(image);
-        
-        // 5. Apply adaptive threshold to create clear black/white text
-        image = _applyAdaptiveThreshold(image);
-      } else {
-        image = enhanceContrast(image, contrast: 1.5);
-        image = sharpenImage(image);
-        image = adjustBrightness(image);
-      }
-
-      return image;
-    } catch (e) {
-      return null;
-    }
-  }
-  
-  static img.Image _applyAdaptiveThreshold(img.Image image) {
-    // Calculate local threshold for each pixel
-    final result = img.Image(width: image.width, height: image.height);
-    const int windowSize = 15;
-    
-    for (int y = 0; y < image.height; y++) {
-      for (int x = 0; x < image.width; x++) {
-        int sum = 0;
-        int count = 0;
-        
-        // Calculate average in local window
-        for (int wy = max(0, y - windowSize); wy < min(image.height, y + windowSize); wy++) {
-          for (int wx = max(0, x - windowSize); wx < min(image.width, x + windowSize); wx++) {
-            final pixel = image.getPixel(wx, wy);
-            sum += pixel.r.toInt();
-            count++;
-          }
-        }
-        
-        final threshold = sum ~/ count;
-        final pixel = image.getPixel(x, y);
-        final value = pixel.r.toInt() > threshold - 10 ? 255 : 0;
-        
-        result.setPixelRgba(x, y, value, value, value, 255);
-      }
-    }
-    
-    return result;
-  }
-
-  static img.Image cropToCardFrame(img.Image image, Rect cardFrame) {
-    int x = (cardFrame.left * image.width).toInt().clamp(0, image.width - 1);
-    int y = (cardFrame.top * image.height).toInt().clamp(0, image.height - 1);
-    int width = (cardFrame.width * image.width).toInt().clamp(1, image.width - x);
-    int height = (cardFrame.height * image.height).toInt().clamp(1, image.height - y);
-
+  static img.Image cropToNormalizedCard(
+    img.Image image,
+    NormalizedCardCrop crop, {
+    double padding = 0.025,
+  }) {
+    final left = (crop.left - padding).clamp(0.0, 1.0);
+    final top = (crop.top - padding).clamp(0.0, 1.0);
+    final right = (crop.left + crop.width + padding).clamp(0.0, 1.0);
+    final bottom = (crop.top + crop.height + padding).clamp(0.0, 1.0);
+    final x = (left * image.width).round().clamp(0, image.width - 1);
+    final y = (top * image.height).round().clamp(0, image.height - 1);
+    final width = ((right - left) * image.width).round().clamp(
+      1,
+      image.width - x,
+    );
+    final height = ((bottom - top) * image.height).round().clamp(
+      1,
+      image.height - y,
+    );
     return img.copyCrop(image, x: x, y: y, width: width, height: height);
+  }
+
+  /// Adds a second OCR candidate for gallery photos where a landscape card is
+  /// centered but surrounded by table/background. The original is always kept
+  /// as well, so an off-center card cannot be made worse by this heuristic.
+  static img.Image centerCropToCardAspect(img.Image image) {
+    const cardAspect = 1.586;
+    final currentAspect = image.width / image.height;
+    if ((currentAspect - cardAspect).abs() < 0.08) return image;
+
+    if (currentAspect > cardAspect) {
+      final width = (image.height * cardAspect).round();
+      return img.copyCrop(
+        image,
+        x: ((image.width - width) / 2).round(),
+        y: 0,
+        width: width,
+        height: image.height,
+      );
+    }
+    final height = (image.width / cardAspect).round();
+    return img.copyCrop(
+      image,
+      x: 0,
+      y: ((image.height - height) / 2).round(),
+      width: image.width,
+      height: height,
+    );
   }
 
   static img.Image convertToGrayscale(img.Image image) {
@@ -112,20 +93,16 @@ class ImageUtils {
   static img.Image sharpenImage(img.Image image, {double amount = 1.0}) {
     final center = 5 * amount;
     final edge = -1 * amount;
-    
+
     return img.convolution(
       image,
-      filter: [
-        0, edge, 0,
-        edge, center, edge,
-        0, edge, 0
-      ],
+      filter: [0, edge, 0, edge, center, edge, 0, edge, 0],
     );
   }
 
   static img.Image adjustBrightness(img.Image image) {
     double avgBrightness = calculateAverageBrightness(image);
-    
+
     double adjustment = 0;
     if (avgBrightness < 100) {
       adjustment = (100 - avgBrightness) / 100 * 50;
@@ -136,7 +113,7 @@ class ImageUtils {
     if (adjustment != 0) {
       return img.adjustColor(image, brightness: adjustment);
     }
-    
+
     return image;
   }
 
@@ -158,11 +135,14 @@ class ImageUtils {
     return pixelCount > 0 ? totalBrightness / pixelCount : 0;
   }
 
-  static Future<ImageQuality> validateImageQuality(String imagePath) async {
+  static Future<ImageQuality> validateImageQuality(
+    String imagePath, {
+    NormalizedCardCrop? crop,
+  }) async {
     try {
       final bytes = await File(imagePath).readAsBytes();
       img.Image? image = img.decodeImage(bytes);
-      
+
       if (image == null) {
         return ImageQuality(
           blurScore: 0,
@@ -170,6 +150,12 @@ class ImageUtils {
           isGoodQuality: false,
           warning: 'Failed to decode image',
         );
+      }
+
+      image = img.bakeOrientation(image);
+
+      if (crop != null) {
+        image = cropToNormalizedCard(image, crop);
       }
 
       if (image.width < minWidth || image.height < minHeight) {
@@ -183,6 +169,8 @@ class ImageUtils {
 
       double blurScore = calculateBlurScore(image);
       double brightness = calculateAverageBrightness(image);
+      final contrast = calculateLuminanceContrast(image);
+      final glareRatio = calculateGlareRatio(image);
 
       String? warning;
       bool isGoodQuality = true;
@@ -194,13 +182,23 @@ class ImageUtils {
         warning = 'Image is too dark. Please improve lighting or use flash.';
         isGoodQuality = false;
       } else if (brightness > maxBrightness) {
-        warning = 'Image is too bright. Please reduce lighting or turn off flash.';
+        warning =
+            'Image is too bright. Please reduce lighting or turn off flash.';
+        isGoodQuality = false;
+      } else if (glareRatio > maxGlareRatio) {
+        warning =
+            'Glare is covering the card. Tilt it slightly away from the light.';
+        isGoodQuality = false;
+      } else if (contrast < minContrast) {
+        warning = 'Card details have low contrast. Try a different angle or background.';
         isGoodQuality = false;
       }
 
       return ImageQuality(
         blurScore: blurScore,
         brightness: brightness,
+        contrast: contrast,
+        glareRatio: glareRatio,
         isGoodQuality: isGoodQuality,
         warning: warning,
       );
@@ -215,87 +213,71 @@ class ImageUtils {
   }
 
   static double calculateBlurScore(img.Image image) {
-    img.Image gray = img.grayscale(image);
-    
-    List<List<int>> laplacian = List.generate(
-      gray.height,
-      (y) => List.generate(gray.width, (x) => 0),
-    );
+    final gray = img.grayscale(image);
+    final step = max(1, min(gray.width, gray.height) ~/ 700);
+    var count = 0;
+    var mean = 0.0;
+    var squaredDelta = 0.0;
 
-    for (int y = 1; y < gray.height - 1; y++) {
-      for (int x = 1; x < gray.width - 1; x++) {
+    // Online variance avoids allocating an integer matrix proportional to a
+    // very-high-resolution camera capture.
+    for (var y = step; y < gray.height - step; y += step) {
+      for (var x = step; x < gray.width - step; x += step) {
         final center = gray.getPixel(x, y).r.toInt();
-        final top = gray.getPixel(x, y - 1).r.toInt();
-        final bottom = gray.getPixel(x, y + 1).r.toInt();
-        final left = gray.getPixel(x - 1, y).r.toInt();
-        final right = gray.getPixel(x + 1, y).r.toInt();
-        
-        laplacian[y][x] = (4 * center - top - bottom - left - right).abs();
-      }
-    }
-
-    double sum = 0;
-    int count = 0;
-    for (int y = 1; y < gray.height - 1; y++) {
-      for (int x = 1; x < gray.width - 1; x++) {
-        sum += laplacian[y][x];
+        final top = gray.getPixel(x, y - step).r.toInt();
+        final bottom = gray.getPixel(x, y + step).r.toInt();
+        final left = gray.getPixel(x - step, y).r.toInt();
+        final right = gray.getPixel(x + step, y).r.toInt();
+        final laplacian = (4 * center - top - bottom - left - right).abs();
         count++;
+        final delta = laplacian - mean;
+        mean += delta / count;
+        squaredDelta += delta * (laplacian - mean);
       }
     }
-    
-    double mean = count > 0 ? sum / count : 0;
-    
-    double variance = 0;
-    for (int y = 1; y < gray.height - 1; y++) {
-      for (int x = 1; x < gray.width - 1; x++) {
-        variance += pow(laplacian[y][x] - mean, 2);
+    return count > 1 ? squaredDelta / (count - 1) : 0;
+  }
+
+  static double calculateLuminanceContrast(img.Image image) {
+    final step = max(1, min(image.width, image.height) ~/ 500);
+    var count = 0;
+    var mean = 0.0;
+    var squaredDelta = 0.0;
+    for (var y = 0; y < image.height; y += step) {
+      for (var x = 0; x < image.width; x += step) {
+        final pixel = image.getPixel(x, y);
+        final luminance =
+            0.299 * pixel.r.toDouble() +
+            0.587 * pixel.g.toDouble() +
+            0.114 * pixel.b.toDouble();
+        count++;
+        final delta = luminance - mean;
+        mean += delta / count;
+        squaredDelta += delta * (luminance - mean);
       }
     }
-    
-    return count > 0 ? variance / count : 0;
+    return count > 1 ? sqrt(squaredDelta / (count - 1)) : 0;
   }
 
-  static Future<File> savePreprocessedImage(img.Image image, String originalPath) async {
-    final bytes = img.encodeJpg(image, quality: 95);
-    final file = File(originalPath.replaceAll('.jpg', '_processed.jpg'));
-    await file.writeAsBytes(bytes);
-    return file;
-  }
-
-  static String correctOCRCharacters(String text) {
-    return text
-        // Common OCR errors for embossed numbers
-        .replaceAll('O', '0')
-        .replaceAll('o', '0')
-        .replaceAll('I', '1')
-        .replaceAll('i', '1')
-        .replaceAll('l', '1')
-        .replaceAll('L', '1')
-        .replaceAll('|', '1')
-        .replaceAll('S', '5')
-        .replaceAll('s', '5')
-        .replaceAll('B', '8')
-        .replaceAll('b', '6')  // 'b' often misread as '6'
-        .replaceAll('G', '6')
-        .replaceAll('Z', '2')
-        .replaceAll('z', '2')
-        .replaceAll('T', '7')
-        .replaceAll('D', '0')
-        .replaceAll('Q', '0');
+  static double calculateGlareRatio(img.Image image) {
+    final step = max(1, min(image.width, image.height) ~/ 500);
+    var sampled = 0;
+    var glarePixels = 0;
+    for (var y = 0; y < image.height; y += step) {
+      for (var x = 0; x < image.width; x += step) {
+        final pixel = image.getPixel(x, y);
+        final maximum = max(
+          pixel.r.toInt(),
+          max(pixel.g.toInt(), pixel.b.toInt()),
+        );
+        final minimum = min(
+          pixel.r.toInt(),
+          min(pixel.g.toInt(), pixel.b.toInt()),
+        );
+        if (maximum >= 245 && maximum - minimum <= 14) glarePixels++;
+        sampled++;
+      }
+    }
+    return sampled == 0 ? 0 : glarePixels / sampled;
   }
 }
-
-class Rect {
-  final double left;
-  final double top;
-  final double width;
-  final double height;
-
-  Rect({
-    required this.left,
-    required this.top,
-    required this.width,
-    required this.height,
-  });
-}
-

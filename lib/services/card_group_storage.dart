@@ -1,6 +1,8 @@
 import 'dart:convert';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:uuid/uuid.dart';
+
 import '../models/card_group.dart';
 import 'secure_card_storage.dart';
 
@@ -14,9 +16,7 @@ class CardGroupStorage {
       encryptedSharedPreferences: true,
       resetOnError: true,
     ),
-    iOptions: IOSOptions(
-      accessibility: KeychainAccessibility.first_unlock,
-    ),
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
   );
 
   static const String _groupsKey = 'card_groups';

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+
 import 'package:archive/archive.dart';
 import 'package:encrypt/encrypt.dart' as encrypt_pkg;
 import 'package:pointycastle/export.dart';
@@ -28,10 +29,10 @@ class BackupExportResult {
   });
 
   Map<String, dynamic> toMap() => {
-        'saltBase64': saltBase64,
-        'encryptedData': encryptedData,
-        'exportedAt': exportedAt,
-      };
+    'saltBase64': saltBase64,
+    'encryptedData': encryptedData,
+    'exportedAt': exportedAt,
+  };
 
   factory BackupExportResult.fromMap(Map<String, dynamic> map) {
     return BackupExportResult(
@@ -54,10 +55,10 @@ class BackupDecryptRequest {
   });
 
   Map<String, dynamic> toMap() => {
-        'encryptedData': encryptedData,
-        'password': password,
-        'saltBase64': saltBase64,
-      };
+    'encryptedData': encryptedData,
+    'password': password,
+    'saltBase64': saltBase64,
+  };
 
   factory BackupDecryptRequest.fromMap(Map<String, dynamic> map) {
     return BackupDecryptRequest(
@@ -90,14 +91,14 @@ class BackupBundleExportRequest {
   });
 
   Map<String, dynamic> toMap() => {
-        'encryptedCards': encryptedCards,
-        'groups': groups,
-        'photos': photos,
-        'masterKeyBase64': masterKeyBase64,
-        'password': password,
-        'saltBase64': saltBase64,
-        'exportedAt': exportedAt,
-      };
+    'encryptedCards': encryptedCards,
+    'groups': groups,
+    'photos': photos,
+    'masterKeyBase64': masterKeyBase64,
+    'password': password,
+    'saltBase64': saltBase64,
+    'exportedAt': exportedAt,
+  };
 
   factory BackupBundleExportRequest.fromMap(Map<String, dynamic> map) {
     return BackupBundleExportRequest(
@@ -191,10 +192,7 @@ Map<String, dynamic> decryptBackupBundleInIsolate(Map<String, dynamic> raw) {
     throw Exception('Backup bundle is missing its manifest');
   }
 
-  return {
-    'manifest': manifestJson,
-    'photos': photos,
-  };
+  return {'manifest': manifestJson, 'photos': photos};
 }
 
 /// Runs entirely in a background isolate via [compute].
@@ -212,11 +210,23 @@ Map<String, dynamic> _toPlaintextCard(
   encrypt_pkg.Key masterKey,
 ) {
   return {
-    'cardNumber': _aesGcmDecrypt(card['encryptedCardNumber'] as String, masterKey),
-    'expiryDate': _aesGcmDecrypt(card['encryptedExpiryDate'] as String, masterKey),
-    'cardholderName': _decryptField(card['encryptedCardholderName'] as String?, masterKey),
+    'cardNumber': _aesGcmDecrypt(
+      card['encryptedCardNumber'] as String,
+      masterKey,
+    ),
+    'expiryDate': _aesGcmDecrypt(
+      card['encryptedExpiryDate'] as String,
+      masterKey,
+    ),
+    'cardholderName': _decryptField(
+      card['encryptedCardholderName'] as String?,
+      masterKey,
+    ),
     'cvv': _decryptField(card['encryptedCvv'] as String?, masterKey),
-    'accountNumber': _decryptField(card['encryptedAccountNumber'] as String?, masterKey),
+    'accountNumber': _decryptField(
+      card['encryptedAccountNumber'] as String?,
+      masterKey,
+    ),
     'ifscCode': _decryptField(card['encryptedIfscCode'] as String?, masterKey),
     'upiId': _decryptField(card['encryptedUpiId'] as String?, masterKey),
     'lastFourDigits': card['lastFourDigits'],
@@ -228,6 +238,11 @@ Map<String, dynamic> _toPlaintextCard(
     'bankId': card['bankId'],
     'cardNickname': card['cardNickname'],
     'designId': card['designId'],
+    'customGradientStartColor': card['customGradientStartColor'],
+    'customGradientEndColor': card['customGradientEndColor'],
+    'customGradientAngle': card['customGradientAngle'],
+    'hasCustomBackgroundImage': card['customBackgroundImagePath'] != null,
+    'backgroundImageBlur': card['backgroundImageBlur'],
     'notes': card['notes'],
     'groupId': card['groupId'],
     'attachmentIds': card['attachmentIds'],
@@ -239,7 +254,11 @@ String? _decryptField(String? ciphertext, encrypt_pkg.Key key) {
   return _aesGcmDecrypt(ciphertext, key);
 }
 
-String _passwordEncryptBytes(Uint8List plaintext, String password, Uint8List salt) {
+String _passwordEncryptBytes(
+  Uint8List plaintext,
+  String password,
+  Uint8List salt,
+) {
   final key = _deriveKeyFromPassword(password, salt);
   final iv = encrypt_pkg.IV.fromSecureRandom(16);
   final encrypter = encrypt_pkg.Encrypter(
@@ -249,7 +268,11 @@ String _passwordEncryptBytes(Uint8List plaintext, String password, Uint8List sal
   return '${iv.base64}:${encrypted.base64}';
 }
 
-Uint8List _passwordDecryptBytes(String ciphertext, String password, Uint8List salt) {
+Uint8List _passwordDecryptBytes(
+  String ciphertext,
+  String password,
+  Uint8List salt,
+) {
   final key = _deriveKeyFromPassword(password, salt);
   final parts = ciphertext.split(':');
   if (parts.length != 2) {

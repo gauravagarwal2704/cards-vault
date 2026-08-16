@@ -326,14 +326,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.0"
-  flutter_tesseract_ocr:
-    dependency: "direct main"
-    description:
-      name: flutter_tesseract_ocr
-      sha256: e368f70d6b942e42ff05336d65f031bfca98002f9bf8988c485bbf87e990870c
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.4.30"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -360,14 +352,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.8.1"
-  google_mlkit_digital_ink_recognition:
-    dependency: "direct main"
-    description:
-      name: google_mlkit_digital_ink_recognition
-      sha256: "289e10da258f37c72a093a89d12b436f7df33cedf3cf5e144774503143178557"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.12.1"
   google_mlkit_text_recognition:
     dependency: "direct main"
     description:
@@ -760,14 +744,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.1.5+1"
-  quiver:
-    dependency: transitive
-    description:
-      name: quiver
-      sha256: ea0b925899e64ecdfbf9c7becb60d5b50e706ade44a85b2363be2a22d88117d2
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.2.2"
   share_plus:
     dependency: "direct main"
     description:
@@ -901,14 +877,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.12"
-  tflite_flutter:
-    dependency: "direct main"
-    description:
-      name: tflite_flutter
-      sha256: "0bba9040d8decda0960d7abf8eabf32243bf092bc7d0084e8e19681866b0bdbe"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.12.1"
   typed_data:
     dependency: transitive
     description:

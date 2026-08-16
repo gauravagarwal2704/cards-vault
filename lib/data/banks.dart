@@ -487,8 +487,9 @@ class Banks {
   ];
 
   static List<BankInfo> get popular => all.where((b) => b.isPopular).toList();
-  
-  static List<BankInfo> get allSorted => List.from(all)..sort((a, b) => a.name.compareTo(b.name));
+
+  static List<BankInfo> get allSorted =>
+      List.from(all)..sort((a, b) => a.name.compareTo(b.name));
 
   static BankInfo? getById(String id) {
     try {
@@ -501,12 +502,12 @@ class Banks {
   static BankInfo? getByName(String name) {
     try {
       return all.firstWhere(
-        (b) => b.name.toLowerCase() == name.toLowerCase() ||
-               b.shortName.toLowerCase() == name.toLowerCase(),
+        (b) =>
+            b.name.toLowerCase() == name.toLowerCase() ||
+            b.shortName.toLowerCase() == name.toLowerCase(),
       );
     } catch (_) {
       return null;
     }
   }
 }
-

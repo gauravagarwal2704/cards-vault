@@ -1,481 +1,331 @@
 import 'dart:io';
+
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-import 'package:flutter_tesseract_ocr/flutter_tesseract_ocr.dart';
 import 'package:image/image.dart' as img;
-import '../utils/image_utils.dart';
+
+import '../models/card_scan_capture.dart';
 import '../utils/card_network_utils.dart';
-import 'card_ocr_model.dart';
+import '../utils/image_utils.dart';
+import 'card_field_resolver.dart';
 
 class OCRResult {
   final String? cardNumber;
   final String? expiryDate;
   final String? cardholderName;
   final String? cardType;
+  final double cardNumberConfidence;
+  final double expiryDateConfidence;
+  final double cardholderNameConfidence;
+  final double overallConfidence;
+  final int supportingFrames;
+  final List<String> reviewWarnings;
 
-  OCRResult({
+  const OCRResult({
     this.cardNumber,
     this.expiryDate,
     this.cardholderName,
     this.cardType,
+    this.cardNumberConfidence = 0,
+    this.expiryDateConfidence = 0,
+    this.cardholderNameConfidence = 0,
+    this.overallConfidence = 0,
+    this.supportingFrames = 0,
+    this.reviewWarnings = const [],
   });
+
+  bool get needsReview => reviewWarnings.isNotEmpty || overallConfidence < 0.82;
 }
 
 class OCRService {
   final TextRecognizer _textRecognizer = TextRecognizer();
-  final CardOCRModel _cardModel = CardOCRModel();
+  final CardFieldResolver _resolver = CardFieldResolver();
 
-  Future<OCRResult> processImage(String imagePath, {bool preprocess = true}) async {
-    try {
-      print('=== OCR PROCESSING START ===');
-      
-      String? cardNumber;
-      String? expiryDate;
-      String? cardholderName;
-      
-      print('\n--- ATTEMPT 1: Region-Based OCR (AI Model) ---');
-      Map<String, dynamic> regionResult = await _cardModel.detectCardRegions(imagePath);
-      
-      if (regionResult['success'] == true) {
-        Map<String, img.Image> regions = regionResult['croppedImages'];
-        
-        if (regions.containsKey('cardNumber') && regions['cardNumber'] != null) {
-          img.Image processedCardNum = _cardModel.preprocessRegion(
-            regions['cardNumber']!,
-            forNumbers: true,
-          );
-          String cardNumPath = await _cardModel.saveRegionImage(
-            processedCardNum,
-            imagePath,
-            'cardnum',
-          );
-          
-          try {
-            String cardNumText = await FlutterTesseractOcr.extractText(
-              cardNumPath,
-              language: 'eng',
-              args: {
-                "psm": "7",
-                "tessedit_char_whitelist": "0123456789 ",
-              },
-            );
-            print('Card number region text: $cardNumText');
-            List<TextBlock> emptyBlocks = [];
-            cardNumber = _extractCardNumber(cardNumText, emptyBlocks);
-          } catch (e) {
-            print('Card number region OCR failed: $e');
-          }
-        }
-
-        if (expiryDate == null && regions.containsKey('expiry')) {
-          img.Image processedExpiry = _cardModel.preprocessRegion(
-            regions['expiry']!,
-            forNumbers: true,
-          );
-          String expiryPath = await _cardModel.saveRegionImage(
-            processedExpiry,
-            imagePath,
-            'expiry',
-          );
-          
-          try {
-            String expiryText = await FlutterTesseractOcr.extractText(
-              expiryPath,
-              language: 'eng',
-              args: {
-                "psm": "7",
-                "tessedit_char_whitelist": "0123456789/",
-              },
-            );
-            print('Expiry region text: $expiryText');
-            List<TextBlock> emptyBlocks = [];
-            expiryDate = _extractExpiryDate(expiryText, emptyBlocks);
-          } catch (e) {
-            print('Expiry region OCR failed: $e');
-          }
-        }
-
-        if (cardholderName == null && regions.containsKey('name')) {
-          img.Image processedName = _cardModel.preprocessRegion(
-            regions['name']!,
-            forNumbers: false,
-          );
-          String namePath = await _cardModel.saveRegionImage(
-            processedName,
-            imagePath,
-            'name',
-          );
-          
-          try {
-            String nameText = await FlutterTesseractOcr.extractText(
-              namePath,
-              language: 'eng',
-              args: {
-                "psm": "7",
-              },
-            );
-            print('Name region text: $nameText');
-            List<TextBlock> emptyBlocks = [];
-            cardholderName = _extractCardholderName(nameText, emptyBlocks);
-          } catch (e) {
-            print('Name region OCR failed: $e');
-          }
-        }
-      }
-      
-      print('Region-based results - Card: $cardNumber, Expiry: $expiryDate, Name: $cardholderName');
-
-      if (cardNumber == null) {
-        print('\n--- ATTEMPT 2: ML Kit on Original ---');
-        final originalImage = InputImage.fromFile(File(imagePath));
-        final mlKitText = await _textRecognizer.processImage(originalImage);
-        
-        print('ML Kit text: ${mlKitText.text}');
-        print('ML Kit blocks: ${mlKitText.blocks.length}');
-        
-        cardNumber = _extractCardNumber(mlKitText.text, mlKitText.blocks);
-        expiryDate = expiryDate ?? _extractExpiryDate(mlKitText.text, mlKitText.blocks);
-        cardholderName = cardholderName ?? _extractCardholderName(mlKitText.text, mlKitText.blocks);
-        
-        print('ML Kit results - Card: $cardNumber, Expiry: $expiryDate, Name: $cardholderName');
-      }
-
-      if (cardNumber == null) {
-        print('\n--- ATTEMPT 3: Tesseract Full Image ---');
-        try {
-          String tesseractText = await FlutterTesseractOcr.extractText(
-            imagePath,
-            language: 'eng',
-            args: {
-              "psm": "6",
-              "preserve_interword_spaces": "1",
-            },
-          );
-          
-          print('Tesseract text: $tesseractText');
-          
-          List<TextBlock> emptyBlocks = [];
-          cardNumber = _extractCardNumber(tesseractText, emptyBlocks);
-          expiryDate = expiryDate ?? _extractExpiryDate(tesseractText, emptyBlocks);
-          cardholderName = cardholderName ?? _extractCardholderName(tesseractText, emptyBlocks);
-          
-          print('Tesseract results - Card: $cardNumber, Expiry: $expiryDate, Name: $cardholderName');
-        } catch (e) {
-          print('Tesseract failed: $e');
-        }
-      }
-
-      if (cardNumber == null && preprocess) {
-        print('\n--- ATTEMPT 4: Embossed Text Preprocessing + Tesseract ---');
-        img.Image? embossedImage = await ImageUtils.preprocessForOCR(imagePath, forEmbossedText: true);
-        if (embossedImage != null) {
-          File processedFile = await ImageUtils.savePreprocessedImage(
-            embossedImage,
-            imagePath,
-          );
-          
-          try {
-            String tesseractText = await FlutterTesseractOcr.extractText(
-              processedFile.path,
-              language: 'eng',
-              args: {
-                "psm": "6",
-                "preserve_interword_spaces": "1",
-              },
-            );
-            
-            print('Embossed preprocessing Tesseract text: $tesseractText');
-            
-            List<TextBlock> emptyBlocks = [];
-            cardNumber = _extractCardNumber(tesseractText, emptyBlocks);
-            expiryDate = expiryDate ?? _extractExpiryDate(tesseractText, emptyBlocks);
-            cardholderName = cardholderName ?? _extractCardholderName(tesseractText, emptyBlocks);
-            
-            print('Embossed preprocessing results - Card: $cardNumber, Expiry: $expiryDate, Name: $cardholderName');
-          } catch (e) {
-            print('Embossed preprocessing Tesseract failed: $e');
-          }
-        }
-      }
-      
-      if (cardNumber == null && preprocess) {
-        print('\n--- ATTEMPT 5: Standard Preprocessing + Tesseract ---');
-        img.Image? preprocessedImage = await ImageUtils.preprocessForOCR(imagePath, forEmbossedText: false);
-        if (preprocessedImage != null) {
-          File processedFile = await ImageUtils.savePreprocessedImage(
-            preprocessedImage,
-            imagePath,
-          );
-          
-          try {
-            String tesseractText = await FlutterTesseractOcr.extractText(
-              processedFile.path,
-              language: 'eng',
-              args: {
-                "psm": "6",
-                "preserve_interword_spaces": "1",
-              },
-            );
-            
-            print('Standard preprocessing Tesseract text: $tesseractText');
-            
-            List<TextBlock> emptyBlocks = [];
-            cardNumber = _extractCardNumber(tesseractText, emptyBlocks);
-            expiryDate = expiryDate ?? _extractExpiryDate(tesseractText, emptyBlocks);
-            cardholderName = cardholderName ?? _extractCardholderName(tesseractText, emptyBlocks);
-            
-            print('Standard preprocessing results - Card: $cardNumber, Expiry: $expiryDate, Name: $cardholderName');
-          } catch (e) {
-            print('Standard preprocessing Tesseract failed: $e');
-          }
-        }
-      }
-
-      String? cardType = cardNumber != null ? _detectCardType(cardNumber) : null;
-
-      print('\n=== FINAL RESULTS ===');
-      print('Card: $cardNumber');
-      print('Expiry: $expiryDate');
-      print('Name: $cardholderName');
-      print('Type: $cardType');
-      print('=== OCR PROCESSING END ===\n');
-
-      return OCRResult(
-        cardNumber: cardNumber,
-        expiryDate: expiryDate,
-        cardholderName: cardholderName,
-        cardType: cardType,
-      );
-    } catch (e) {
-      print('OCR Error: $e');
-      throw Exception('Failed to process image: $e');
-    }
+  Future<OCRResult> processImage(
+    String imagePath, {
+    bool preprocess = true,
+    NormalizedCardCrop? crop,
+  }) {
+    return processImages([imagePath], preprocess: preprocess, crop: crop);
   }
 
-  String? _extractCardNumber(String text, List<TextBlock> textBlocks) {
-    print('Extracting card number from text...');
-    
-    // Step 1: Look for patterns with spaces/dashes (most reliable for embossed cards)
-    // Try both original and corrected text
-    List<String> textsToTry = [text, ImageUtils.correctOCRCharacters(text)];
-    
-    for (String testText in textsToTry) {
-      // Pattern for card numbers with spaces: "4150 2108 2914 633"
-      RegExp spacedPattern = RegExp(r'([0-9iIlLoOsS]{4}[\s\-]+[0-9iIlLoOsS]{4}[\s\-]+[0-9iIlLoOsS]{4}[\s\-]+[0-9iIlLoOsS]{3,4})');
-      Iterable<Match> matches = spacedPattern.allMatches(testText);
-      
-      for (Match match in matches) {
-        String raw = match.group(1)!;
-        print('Found spaced pattern: "$raw"');
-        
-        // Aggressive OCR correction for embossed numbers
-        String corrected = raw
-            .replaceAll('i', '1')
-            .replaceAll('I', '1')
-            .replaceAll('l', '1')
-            .replaceAll('L', '1')
-            .replaceAll('O', '0')
-            .replaceAll('o', '0')
-            .replaceAll('S', '5')
-            .replaceAll('s', '5')
-            .replaceAll('b', '6')
-            .replaceAll('B', '8')
-            .replaceAll(RegExp(r'[\s\-]'), '');
-        
-        print('Corrected to: $corrected (length: ${corrected.length})');
-        
-        if (corrected.length >= 13 && corrected.length <= 16) {
-          if (_isValidLuhn(corrected)) {
-            print('✓ Valid card from spaced pattern: $corrected');
-            return corrected;
-          }
-          print('  Luhn check failed for: $corrected');
-        }
-      }
-    }
-    
-    // Step 2: Check individual text blocks (each line of OCR)
-    print('Checking ${textBlocks.length} text blocks...');
-    List<String> blockCandidates = [];
-    
-    for (var block in textBlocks) {
-      String blockText = block.text;
-      // Look for lines that might be card numbers (contain digits and are long enough)
-      if (blockText.replaceAll(RegExp(r'[^0-9]'), '').length >= 13) {
-        String corrected = ImageUtils.correctOCRCharacters(blockText);
-        String digitsOnly = corrected.replaceAll(RegExp(r'[^0-9]'), '');
-        
-        if (digitsOnly.length >= 13 && digitsOnly.length <= 19) {
-          blockCandidates.add(digitsOnly);
-          print('Block candidate: $digitsOnly (from: "${blockText.trim()}")');
-        }
-      }
-    }
+  /// Resolves card fields from multiple nearby frames entirely on device.
+  ///
+  /// The recognizer's line geometry, deterministic payment-card rules, and
+  /// agreement across frames contribute independently to field confidence.
+  Future<OCRResult> processImages(
+    List<String> imagePaths, {
+    bool preprocess = true,
+    NormalizedCardCrop? crop,
+  }) async {
+    if (imagePaths.isEmpty) return const OCRResult();
 
-    // Check exact length matches first (most reliable)
-    for (String candidate in blockCandidates) {
-      if ((candidate.length == 16 || candidate.length == 15 || candidate.length == 13) && 
-          _isValidLuhn(candidate)) {
-        print('✓ Valid card from block: $candidate');
-        return candidate;
-      }
-    }
+    final scratchDirectory = await Directory.systemTemp.createTemp(
+      'cardvault_scan_',
+    );
+    final observations = <CardTextObservation>[];
+    final preparedFrames = <_PreparedFrame>[];
 
-    // Check substrings of longer sequences
-    for (String candidate in blockCandidates) {
-      if (candidate.length > 16) {
-        for (int i = 0; i <= candidate.length - 13; i++) {
-          for (int len in [16, 15, 13]) {
-            if (i + len <= candidate.length) {
-              String sub = candidate.substring(i, i + len);
-              if (_isValidLuhn(sub)) {
-                print('✓ Valid card extracted from block: $sub');
-                return sub;
-              }
+    try {
+      for (var index = 0; index < imagePaths.length; index++) {
+        final prepared = await _prepareFrame(
+          sourcePath: imagePaths[index],
+          frameIndex: index,
+          crop: crop,
+          scratchDirectory: scratchDirectory,
+        );
+        if (prepared == null) continue;
+        preparedFrames.add(prepared);
+
+        try {
+          final recognized = await _textRecognizer.processImage(
+            InputImage.fromFilePath(prepared.path),
+          );
+          observations.addAll(
+            _observationsFromMlKit(
+              recognized,
+              prepared,
+              recognizerConfidence: crop == null ? 0.76 : 0.82,
+            ),
+          );
+        } catch (_) {
+          // A later frame or an enhanced-image pass may still succeed.
+        }
+
+        if (crop == null) {
+          final centered = await _prepareFrame(
+            sourcePath: imagePaths[index],
+            frameIndex: index,
+            crop: null,
+            scratchDirectory: scratchDirectory,
+            centerCropToCard: true,
+          );
+          if (centered != null && centered.path != prepared.path) {
+            preparedFrames.add(centered);
+            try {
+              final recognized = await _textRecognizer.processImage(
+                InputImage.fromFilePath(centered.path),
+              );
+              observations.addAll(
+                _observationsFromMlKit(
+                  recognized,
+                  centered,
+                  recognizerConfidence: 0.80,
+                ),
+              );
+            } catch (_) {
+              // The full gallery image remains available.
             }
           }
         }
       }
-    }
 
-    print('✗ No valid card number found');
-    return null;
-  }
+      var resolution = _resolver.resolve(observations);
 
-  bool _isValidLuhn(String cardNumber) {
-    if (cardNumber.isEmpty) return false;
-    
-    int sum = 0;
-    bool alternate = false;
-    
-    for (int i = cardNumber.length - 1; i >= 0; i--) {
-      int digit = int.tryParse(cardNumber[i]) ?? 0;
-      
-      if (alternate) {
-        digit *= 2;
-        if (digit > 9) {
-          digit -= 9;
-        }
-      }
-      
-      sum += digit;
-      alternate = !alternate;
-    }
-    
-    return sum % 10 == 0;
-  }
-
-  String? _extractExpiryDate(String text, List<TextBlock> textBlocks) {
-    print('Extracting expiry date...');
-    String correctedText = ImageUtils.correctOCRCharacters(text);
-    
-    List<RegExp> patterns = [
-      RegExp(r'(?:VALID\s*THRU|EXPIRES?|GOOD\s*THRU|EXP\.?|EXPIRY)\s*:?\s*(0[1-9]|1[0-2])[/\-\s]?(\d{2,4})', caseSensitive: false),
-      RegExp(r'\b(0[1-9]|1[0-2])[/\-](20)?(\d{2})\b'),
-      RegExp(r'\b(0[1-9]|1[0-2])\s?[/\-]\s?(\d{2})\b'),
-      RegExp(r'(?:^|\s)(0[1-9]|1[0-2])\s?/\s?(\d{2})(?:\s|$)'),
-    ];
-
-    for (var pattern in patterns) {
-      Match? match = pattern.firstMatch(correctedText);
-      if (match != null) {
-        String month = match.group(1)!;
-        String year = match.groupCount >= 3 && match.group(3) != null 
-            ? match.group(3)! 
-            : match.group(2)!;
-        
-        if (year.length == 4) {
-          year = year.substring(2);
-        }
-        
-        print('Testing expiry: $month/$year');
-        if (_isValidExpiry(month, year)) {
-          print('Valid expiry found: $month/$year');
-          return '$month/$year';
-        }
-      }
-    }
-
-    RegExp loosePattern = RegExp(r'(0[1-9]|1[0-2])[\s/\-]?(\d{2})');
-    Iterable<Match> matches = loosePattern.allMatches(correctedText);
-    
-    for (Match match in matches) {
-      String month = match.group(1)!;
-      String year = match.group(2)!;
-      print('Testing loose match: $month/$year');
-      if (_isValidExpiry(month, year)) {
-        print('Valid expiry from loose match: $month/$year');
-        return '$month/$year';
-      }
-    }
-
-    print('No valid expiry date found');
-    return null;
-  }
-
-  bool _isValidExpiry(String month, String year) {
-    int monthNum = int.tryParse(month) ?? 0;
-    if (monthNum < 1 || monthNum > 12) return false;
-
-    int yearNum = int.tryParse(year) ?? 0;
-    if (year.length == 4) {
-      yearNum = yearNum % 100;
-    }
-    
-    int currentYear = DateTime.now().year % 100;
-    int currentMonth = DateTime.now().month;
-    
-    if (yearNum < currentYear) return false;
-    if (yearNum > currentYear + 15) return false;
-    if (yearNum == currentYear && monthNum < currentMonth) return false;
-    
-    return true;
-  }
-
-  String? _extractCardholderName(String text, List<TextBlock> textBlocks) {
-    List<String> lines = text.split('\n');
-    
-    RegExp excludePattern = RegExp(
-      r'(VISA|MASTERCARD|MASTER|AMEX|AMERICAN\s*EXPRESS|DISCOVER|RUPAY|DEBIT|CREDIT|CARD|BANK|VALID|THRU|EXPIRES?|EXPIRY|MEMBER|SINCE|PLATINUM|GOLD|SILVER|CLASSIC|SIGNATURE|INFINITE|WORLD|ELITE|REWARDS?|POINTS?|CASHBACK)',
-      caseSensitive: false,
-    );
-    
-    List<String> candidates = [];
-    
-    for (String line in lines) {
-      String trimmedLine = line.trim().toUpperCase();
-      
-      if (trimmedLine.length >= 5 && 
-          trimmedLine.length <= 30 &&
-          !excludePattern.hasMatch(trimmedLine) &&
-          !RegExp(r'\d').hasMatch(trimmedLine)) {
-        
-        List<String> words = trimmedLine.split(RegExp(r'\s+'));
-        if (words.length >= 2 && words.length <= 4) {
-          bool allWordsValid = words.every((word) => 
-            word.length >= 2 && 
-            RegExp(r'^[A-Z]+$').hasMatch(word)
+      if (preprocess &&
+          preparedFrames.isNotEmpty &&
+          (resolution.cardNumber.value == null ||
+              resolution.cardNumber.confidence < 0.82)) {
+        // Restrict enhanced-image fallback passes to at most two frames.
+        // This keeps scans responsive while still allowing frame consensus.
+        for (final frame in preparedFrames.take(2)) {
+          observations.addAll(
+            await _enhancedObservations(frame, scratchDirectory),
           );
-          
-          if (allWordsValid) {
-            candidates.add(trimmedLine);
-          }
         }
+        resolution = _resolver.resolve(observations);
+      }
+
+      return _toResult(resolution);
+    } finally {
+      // No generated crop or enhanced OCR image survives the scan attempt.
+      try {
+        if (await scratchDirectory.exists()) {
+          await scratchDirectory.delete(recursive: true);
+        }
+      } catch (_) {
+        // Cleanup is best effort on platforms where a native recognizer may
+        // release its file handle a moment after returning.
       }
     }
-
-    if (candidates.isNotEmpty) {
-      candidates.sort((a, b) => b.length.compareTo(a.length));
-      return candidates.first;
-    }
-
-    return null;
   }
 
-  String _detectCardType(String cardNumber) =>
-      CardNetworkUtils.cardTypeFromNumber(cardNumber);
+  Future<_PreparedFrame?> _prepareFrame({
+    required String sourcePath,
+    required int frameIndex,
+    required NormalizedCardCrop? crop,
+    required Directory scratchDirectory,
+    bool centerCropToCard = false,
+  }) async {
+    try {
+      final bytes = await File(sourcePath).readAsBytes();
+      var image = img.decodeImage(bytes);
+      if (image == null) return null;
+      image = img.bakeOrientation(image);
+      if (crop != null) image = ImageUtils.cropToNormalizedCard(image, crop);
+      if (crop == null && centerCropToCard) {
+        image = ImageUtils.centerCropToCardAspect(image);
+      }
+
+      const maximumLongEdge = 2000;
+      if (image.width > maximumLongEdge || image.height > maximumLongEdge) {
+        if (image.width >= image.height) {
+          image = img.copyResize(image, width: maximumLongEdge);
+        } else {
+          image = img.copyResize(image, height: maximumLongEdge);
+        }
+      }
+
+      final variant = centerCropToCard ? 'center' : 'full';
+      final output = File(
+        '${scratchDirectory.path}/frame_${frameIndex}_$variant.jpg',
+      );
+      await output.writeAsBytes(img.encodeJpg(image, quality: 94), flush: true);
+      return _PreparedFrame(
+        path: output.path,
+        frameIndex: frameIndex,
+        width: image.width,
+        height: image.height,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Iterable<CardTextObservation> _observationsFromMlKit(
+    RecognizedText recognized,
+    _PreparedFrame frame, {
+    required double recognizerConfidence,
+  }) sync* {
+    for (final block in recognized.blocks) {
+      for (final line in block.lines) {
+        if (line.text.trim().isEmpty) continue;
+        final bounds = line.boundingBox;
+        yield CardTextObservation(
+          text: line.text,
+          frameIndex: frame.frameIndex,
+          recognizerConfidence: recognizerConfidence,
+          box: NormalizedTextBox(
+            left: (bounds.left / frame.width).clamp(0, 1),
+            top: (bounds.top / frame.height).clamp(0, 1),
+            width: (bounds.width / frame.width).clamp(0, 1),
+            height: (bounds.height / frame.height).clamp(0, 1),
+          ),
+        );
+      }
+
+      // Some card numbers are split into multiple OCR lines. The block-level
+      // observation allows the resolver to recover them with slightly lower
+      // trust than a coherent single line.
+      if (block.lines.length > 1 && block.text.trim().isNotEmpty) {
+        final bounds = block.boundingBox;
+        yield CardTextObservation(
+          text: block.text.replaceAll('\n', ' '),
+          frameIndex: frame.frameIndex,
+          recognizerConfidence: recognizerConfidence * 0.86,
+          box: NormalizedTextBox(
+            left: (bounds.left / frame.width).clamp(0, 1),
+            top: (bounds.top / frame.height).clamp(0, 1),
+            width: (bounds.width / frame.width).clamp(0, 1),
+            height: (bounds.height / frame.height).clamp(0, 1),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<List<CardTextObservation>> _enhancedObservations(
+    _PreparedFrame frame,
+    Directory scratchDirectory,
+  ) async {
+    final observations = <CardTextObservation>[];
+    try {
+      final bytes = await File(frame.path).readAsBytes();
+      var source = img.decodeImage(bytes);
+      if (source != null) {
+        source = ImageUtils.enhanceContrast(source, contrast: 1.65);
+        source = ImageUtils.sharpenImage(source, amount: 1.25);
+        final enhancedPath =
+            '${scratchDirectory.path}/enhanced_${frame.frameIndex}.jpg';
+        await File(enhancedPath)
+            .writeAsBytes(img.encodeJpg(source, quality: 94), flush: true);
+        final recognized = await _textRecognizer.processImage(
+          InputImage.fromFilePath(enhancedPath),
+        );
+        observations.addAll(
+          _observationsFromMlKit(
+            recognized,
+            _PreparedFrame(
+              path: enhancedPath,
+              frameIndex: frame.frameIndex,
+              width: source.width,
+              height: source.height,
+            ),
+            recognizerConfidence: 0.74,
+          ),
+        );
+      }
+    } catch (_) {
+      // Original-frame observations remain available if enhancement or the
+      // additional recognition pass is unavailable on this device.
+    }
+    return observations;
+  }
+
+  OCRResult _toResult(CardFieldResolution resolution) {
+    final warnings = <String>[];
+    if (resolution.cardNumber.value == null) {
+      warnings.add('Card number was not confidently detected.');
+    } else if (resolution.cardNumber.confidence < 0.86) {
+      warnings.add('Check every digit of the card number.');
+    }
+    if (resolution.expiryDate.value == null) {
+      warnings.add('Expiry date was not detected.');
+    } else if (resolution.expiryDate.confidence < 0.8) {
+      warnings.add('Confirm the expiry date.');
+    }
+    if (resolution.cardholderName.value == null) {
+      warnings.add('Cardholder name was not detected.');
+    } else if (resolution.cardholderName.confidence < 0.76) {
+      warnings.add('Confirm the cardholder name.');
+    }
+
+    final cardNumber = resolution.cardNumber.value;
+    final overall =
+        resolution.cardNumber.confidence * 0.7 +
+        resolution.expiryDate.confidence * 0.2 +
+        resolution.cardholderName.confidence * 0.1;
+
+    return OCRResult(
+      cardNumber: cardNumber,
+      expiryDate: resolution.expiryDate.value,
+      cardholderName: resolution.cardholderName.value,
+      cardType: cardNumber == null
+          ? null
+          : CardNetworkUtils.cardTypeFromNumber(cardNumber),
+      cardNumberConfidence: resolution.cardNumber.confidence,
+      expiryDateConfidence: resolution.expiryDate.confidence,
+      cardholderNameConfidence: resolution.cardholderName.confidence,
+      overallConfidence: overall.clamp(0, 0.99),
+      supportingFrames: resolution.cardNumber.supportingFrames,
+      reviewWarnings: warnings,
+    );
+  }
 
   void dispose() {
     _textRecognizer.close();
   }
 }
 
+class _PreparedFrame {
+  final String path;
+  final int frameIndex;
+  final int width;
+  final int height;
+
+  const _PreparedFrame({
+    required this.path,
+    required this.frameIndex,
+    required this.width,
+    required this.height,
+  });
+}

@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum CardViewMode {
-  carousel,
-  grid,
-  stackedGrid,
-}
+enum CardViewMode { carousel, grid, stackedGrid }
 
 extension CardViewModeDisplay on CardViewMode {
   String get label {
@@ -33,12 +29,7 @@ extension CardViewModeDisplay on CardViewMode {
 
 /// The attribute that decides which cards share a stack in
 /// [CardViewMode.stackedGrid].
-enum CardStackBy {
-  bank,
-  type,
-  cardholder,
-  custom,
-}
+enum CardStackBy { bank, type, cardholder, custom }
 
 extension CardStackByDisplay on CardStackBy {
   String get label {
@@ -141,8 +132,8 @@ class CardViewProvider extends ChangeNotifier {
   }
 
   Future<void> cycleViewMode() {
-    final next = CardViewMode
-        .values[(_viewMode.index + 1) % CardViewMode.values.length];
+    final next =
+        CardViewMode.values[(_viewMode.index + 1) % CardViewMode.values.length];
     return setViewMode(next);
   }
 }

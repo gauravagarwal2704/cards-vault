@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
+
 import 'package:encrypt/encrypt.dart' as encrypt_pkg;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:crypto/crypto.dart';
@@ -11,12 +12,8 @@ class EncryptionService {
   EncryptionService._internal();
 
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
-    aOptions: AndroidOptions(
-      encryptedSharedPreferences: true,
-    ),
-    iOptions: IOSOptions(
-      accessibility: KeychainAccessibility.first_unlock,
-    ),
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
   );
 
   static const String _keyStorageKey = 'encryption_master_key';
@@ -28,18 +25,15 @@ class EncryptionService {
     }
 
     String? storedKey = await _secureStorage.read(key: _keyStorageKey);
-    
+
     if (storedKey != null) {
       _cachedKey = encrypt_pkg.Key.fromBase64(storedKey);
       return _cachedKey!;
     }
 
     final key = encrypt_pkg.Key.fromSecureRandom(32);
-    await _secureStorage.write(
-      key: _keyStorageKey,
-      value: key.base64,
-    );
-    
+    await _secureStorage.write(key: _keyStorageKey, value: key.base64);
+
     _cachedKey = key;
     return key;
   }

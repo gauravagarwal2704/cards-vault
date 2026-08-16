@@ -8,7 +8,8 @@ import 'package:uuid/uuid.dart';
 import 'encryption_service.dart';
 
 class CardAttachmentStorage {
-  static final CardAttachmentStorage _instance = CardAttachmentStorage._internal();
+  static final CardAttachmentStorage _instance =
+      CardAttachmentStorage._internal();
   factory CardAttachmentStorage() => _instance;
   CardAttachmentStorage._internal();
 
@@ -36,7 +37,10 @@ class CardAttachmentStorage {
     return attachmentId;
   }
 
-  Future<List<String>> saveAttachments(String cardId, List<File> sources) async {
+  Future<List<String>> saveAttachments(
+    String cardId,
+    List<File> sources,
+  ) async {
     final ids = <String>[];
     for (final source in sources) {
       ids.add(await saveAttachment(cardId, source));
@@ -62,7 +66,10 @@ class CardAttachmentStorage {
     }
   }
 
-  Future<void> deleteAttachments(String cardId, Iterable<String> attachmentIds) async {
+  Future<void> deleteAttachments(
+    String cardId,
+    Iterable<String> attachmentIds,
+  ) async {
     for (final id in attachmentIds) {
       await deleteAttachment(cardId, id);
     }

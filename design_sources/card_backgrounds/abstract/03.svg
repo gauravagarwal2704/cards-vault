@@ -1,0 +1,40 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="350" height="220" viewBox="791 1080 350 220" fill="none"><title>Designer 03</title><defs><linearGradient id="paint133_linear_7_287" x1="791" y1="1300" x2="1141" y2="1080" gradientUnits="userSpaceOnUse">
+<stop stop-color="#0968E5" />
+<stop offset="0.492708" stop-color="#0941AB" />
+<stop offset="1" stop-color="#091970" />
+</linearGradient>
+<linearGradient id="paint131_linear_7_287" x1="791" y1="1300" x2="1141" y2="1080" gradientUnits="userSpaceOnUse">
+<stop stop-color="#0968E5" />
+<stop offset="0.492708" stop-color="#0941AB" />
+<stop offset="1" stop-color="#091970" />
+</linearGradient>
+<linearGradient id="paint129_linear_7_287" x1="791" y1="1300" x2="1141" y2="1080" gradientUnits="userSpaceOnUse">
+<stop stop-color="#0968E5" />
+<stop offset="0.492708" stop-color="#0941AB" />
+<stop offset="1" stop-color="#091970" />
+</linearGradient>
+<linearGradient id="paint127_linear_7_287" x1="791" y1="1300" x2="1141" y2="1080" gradientUnits="userSpaceOnUse">
+<stop stop-color="#0968E5" />
+<stop offset="0.492708" stop-color="#0941AB" />
+<stop offset="1" stop-color="#091970" />
+</linearGradient>
+<linearGradient id="paint126_linear_7_287" x1="791" y1="1300" x2="1141" y2="1080" gradientUnits="userSpaceOnUse">
+<stop stop-color="#0968E5" />
+<stop offset="0.492708" stop-color="#0941AB" />
+<stop offset="1" stop-color="#091970" />
+</linearGradient>
+</defs><rect x="791" y="1080" width="350" height="220" rx="12" fill="url(#paint126_linear_7_287)" />
+<mask id="mask59_7_287" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="791" y="1080" width="350" height="220">
+<rect x="791" y="1080" width="350" height="220" rx="12" fill="url(#paint127_linear_7_287)" />
+</mask>
+<mask id="mask60_7_287" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="791" y="1080" width="350" height="220">
+<rect x="791" y="1080" width="350" height="220" rx="12" fill="url(#paint129_linear_7_287)" />
+</mask>
+<mask id="mask61_7_287" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="791" y="1080" width="350" height="220">
+<rect x="791" y="1080" width="350" height="220" rx="12" fill="url(#paint131_linear_7_287)" />
+</mask>
+<mask id="mask62_7_287" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="791" y="1080" width="350" height="220">
+<rect x="791" y="1080" width="350" height="220" rx="12" fill="url(#paint133_linear_7_287)" />
+</mask>
+</svg>

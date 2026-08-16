@@ -11,11 +11,7 @@ class CardGroup {
     required this.createdAt,
   });
 
-  CardGroup copyWith({
-    String? name,
-    int? colorValue,
-    bool clearColor = false,
-  }) {
+  CardGroup copyWith({String? name, int? colorValue, bool clearColor = false}) {
     return CardGroup(
       id: id,
       name: name ?? this.name,

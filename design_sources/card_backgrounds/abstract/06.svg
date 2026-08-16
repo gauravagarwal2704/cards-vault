@@ -1,0 +1,36 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="350" height="220" viewBox="396 1350 350 220" fill="none"><title>Designer 06</title><defs><linearGradient id="paint147_linear_7_287" x1="746" y1="1460" x2="396" y2="1460" gradientUnits="userSpaceOnUse">
+<stop stop-color="#F9C823" />
+<stop offset="0.336458" stop-color="#FAA03C" />
+<stop offset="0.669792" stop-color="#FB7855" />
+<stop offset="1" stop-color="#FC506E" />
+</linearGradient>
+<linearGradient id="paint146_linear_7_287" x1="746" y1="1460" x2="396" y2="1460" gradientUnits="userSpaceOnUse">
+<stop stop-color="#F9C823" />
+<stop offset="0.336458" stop-color="#FAA03C" />
+<stop offset="0.669792" stop-color="#FB7855" />
+<stop offset="1" stop-color="#FC506E" />
+</linearGradient>
+<linearGradient id="paint145_linear_7_287" x1="746" y1="1460" x2="396" y2="1460" gradientUnits="userSpaceOnUse">
+<stop stop-color="#F9C823" />
+<stop offset="0.336458" stop-color="#FAA03C" />
+<stop offset="0.669792" stop-color="#FB7855" />
+<stop offset="1" stop-color="#FC506E" />
+</linearGradient>
+<linearGradient id="paint144_linear_7_287" x1="746" y1="1460" x2="396" y2="1460" gradientUnits="userSpaceOnUse">
+<stop stop-color="#F9C823" />
+<stop offset="0.336458" stop-color="#FAA03C" />
+<stop offset="0.669792" stop-color="#FB7855" />
+<stop offset="1" stop-color="#FC506E" />
+</linearGradient>
+</defs><rect x="396" y="1350" width="350" height="220" rx="12" fill="url(#paint144_linear_7_287)" />
+<mask id="mask68_7_287" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="396" y="1350" width="350" height="220">
+<rect x="396" y="1350" width="350" height="220" rx="12" fill="url(#paint145_linear_7_287)" />
+</mask>
+<mask id="mask69_7_287" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="396" y="1350" width="350" height="220">
+<rect x="396" y="1350" width="350" height="220" rx="12" fill="url(#paint146_linear_7_287)" />
+</mask>
+<mask id="mask70_7_287" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="396" y="1350" width="350" height="220">
+<rect x="396" y="1350" width="350" height="220" rx="12" fill="url(#paint147_linear_7_287)" />
+</mask>
+</svg>

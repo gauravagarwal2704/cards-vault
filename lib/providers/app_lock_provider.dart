@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../services/auth_service.dart';
 
 class AppLockProvider extends ChangeNotifier with WidgetsBindingObserver {
@@ -110,4 +111,3 @@ class AppLockProvider extends ChangeNotifier with WidgetsBindingObserver {
     super.dispose();
   }
 }
-

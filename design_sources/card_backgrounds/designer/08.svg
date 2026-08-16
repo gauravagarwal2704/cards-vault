@@ -1,0 +1,33 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="350" height="220" viewBox="1186 1350 350 220" fill="none"><title>Designer 08</title><defs><mask id="mask79_7_287" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="1186" y="1350" width="350" height="220">
+<rect x="1186" y="1350" width="350" height="220" rx="12" fill="white" />
+</mask>
+<mask id="mask78_7_287" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="1186" y="1350" width="350" height="220">
+<rect x="1186" y="1350" width="350" height="220" rx="12" fill="white" />
+</mask>
+<mask id="mask77_7_287" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="1186" y="1350" width="350" height="220">
+<rect x="1186" y="1350" width="350" height="220" rx="12" fill="white" />
+</mask>
+<mask id="mask76_7_287" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="1186" y="1350" width="350" height="220">
+<rect x="1186" y="1350" width="350" height="220" rx="12" fill="white" />
+</mask>
+<mask id="mask75_7_287" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="1186" y="1350" width="350" height="220">
+<rect x="1186" y="1350" width="350" height="220" rx="12" fill="white" />
+</mask>
+</defs><rect x="1186" y="1350" width="350" height="220" rx="12" fill="white" />
+<g mask="url(#mask75_7_287)">
+<path d="M1224.6 1488.09C1224.39 1486.57 1225.91 1485.39 1227.33 1485.97L1261.83 1499.98C1263.26 1500.56 1263.53 1502.46 1262.31 1503.41L1232.92 1526.28C1231.71 1527.23 1229.93 1526.51 1229.71 1524.98L1224.6 1488.09Z" fill="#3D087B" />
+</g>
+<g mask="url(#mask76_7_287)">
+<path d="M1319.65 1446.82C1320.71 1445.69 1322.58 1446.13 1323.02 1447.61L1331.75 1476.53C1332.19 1478 1330.87 1479.4 1329.38 1479.05L1299.97 1472.15C1298.47 1471.8 1297.92 1469.95 1298.97 1468.83L1319.65 1446.82Z" fill="#F43B86" />
+</g>
+<g mask="url(#mask77_7_287)">
+<path d="M1285.2 1532.99C1284.48 1531.63 1285.51 1530 1287.05 1530.06L1337.24 1531.98C1338.78 1532.04 1339.67 1533.75 1338.85 1535.05L1312.09 1577.55C1311.27 1578.86 1309.35 1578.78 1308.63 1577.42L1285.2 1532.99Z" fill="#FFE459" />
+</g>
+<g mask="url(#mask78_7_287)">
+<path d="M1512.3 1485.13C1511.98 1484.43 1512.53 1483.65 1513.3 1483.71L1545.21 1486.56C1545.98 1486.63 1546.38 1487.5 1545.94 1488.13L1527.52 1514.35C1527.08 1514.98 1526.12 1514.89 1525.8 1514.19L1512.3 1485.13Z" stroke="#F43B86" stroke-width="2" stroke-linejoin="round" />
+</g>
+<g mask="url(#mask79_7_287)">
+<path d="M1456.04 1504.14C1456.71 1503.87 1457.42 1504.37 1457.42 1505.06L1457.41 1505.2L1452.89 1538.67C1452.79 1539.44 1451.9 1539.8 1451.29 1539.33L1424.56 1518.68C1423.99 1518.24 1424.07 1517.38 1424.67 1517.03L1424.8 1516.97L1456.04 1504.14Z" stroke="#FFE459" stroke-width="2" stroke-linejoin="round" />
+</g>
+</svg>

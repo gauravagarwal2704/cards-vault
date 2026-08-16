@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+
 import '../data/banks.dart';
 import '../theme/app_typography.dart';
 
@@ -14,6 +15,7 @@ class BankLogo extends StatelessWidget {
   /// square one.
   static const Map<String, double> _wideLogoAspectRatios = {
     'hdfc': 139 / 24,
+    'icici': 120 / 24,
     'federal': 78 / 24,
     'idfc': 68 / 24,
     'idbi': 115 / 24,
@@ -28,11 +30,19 @@ class BankLogo extends StatelessWidget {
   /// so they need no white plate behind them.
   static const Set<String> _selfBackedLogos = {'federal'};
 
+  /// Wordmarks that remain transparent and adapt their text to the card while
+  /// retaining the brand colours in the symbol.
+  static const Set<String> _adaptiveWordmarks = {'icici'};
+
   final BankInfo? bank;
   final double size;
   final bool showFallback;
   final bool useSmall;
   final Color? backgroundColor;
+
+  /// The foreground selected by the card contrast system. A light foreground
+  /// indicates a dark card and takes precedence over [backgroundColor].
+  final Color? foregroundColor;
 
   /// Upper bound for plated wordmarks, which are much wider than tall.
   final double? maxWidth;
@@ -44,6 +54,7 @@ class BankLogo extends StatelessWidget {
     this.showFallback = true,
     this.useSmall = true,
     this.backgroundColor,
+    this.foregroundColor,
     this.maxWidth,
   });
 
@@ -57,17 +68,24 @@ class BankLogo extends StatelessWidget {
         ? (bank!.logoPathSmall ?? dummyLogoSmall)
         : (bank!.logoPathLarge ?? dummyLogoLarge);
 
-    final isDarkBackground = backgroundColor != null &&
-        backgroundColor!.computeLuminance() < 0.5;
+    final isDarkBackground = foregroundColor != null
+        ? foregroundColor!.computeLuminance() > 0.5
+        : backgroundColor != null && backgroundColor!.computeLuminance() < 0.5;
 
     final bankId = bank!.id.toLowerCase();
     final aspectRatio = useSmall ? null : _wideLogoAspectRatios[bankId];
 
     if (aspectRatio != null) {
+      final isAdaptive = _adaptiveWordmarks.contains(bankId);
       return _buildWideLogo(
         logoPath,
         aspectRatio,
-        plated: !_selfBackedLogos.contains(bankId),
+        plated: !isAdaptive && !_selfBackedLogos.contains(bankId),
+        colorMapper: isAdaptive
+            ? _IciciWordmarkColorMapper(
+                isDarkBackground ? Colors.white : Colors.black,
+              )
+            : null,
       );
     }
 
@@ -91,6 +109,7 @@ class BankLogo extends StatelessWidget {
     String logoPath,
     double aspectRatio, {
     required bool plated,
+    ColorMapper? colorMapper,
   }) {
     final padding = plated ? size * 0.1 : 0.0;
     final availableWidth = (maxWidth ?? size * 4.5) - padding * 2;
@@ -107,6 +126,7 @@ class BankLogo extends StatelessWidget {
       width: logoWidth,
       height: logoHeight,
       fit: BoxFit.contain,
+      colorMapper: colorMapper,
       placeholderBuilder: (context) => _buildFallback(bank),
       errorBuilder: (context, error, stackTrace) => _buildFallback(bank),
     );
@@ -132,9 +152,9 @@ class BankLogo extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(size / 4),
-        border: Border.all(color: color.withOpacity(0.3), width: 1),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
       ),
       child: Center(
         child: Text(
@@ -148,4 +168,29 @@ class BankLogo extends StatelessWidget {
       ),
     );
   }
+}
+
+class _IciciWordmarkColorMapper extends ColorMapper {
+  static const _sourceTextColor = Color(0xFF004A7F);
+
+  final Color textColor;
+
+  const _IciciWordmarkColorMapper(this.textColor);
+
+  @override
+  Color substitute(
+    String? id,
+    String elementName,
+    String attributeName,
+    Color color,
+  ) {
+    return color == _sourceTextColor ? textColor : color;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _IciciWordmarkColorMapper && other.textColor == textColor;
+
+  @override
+  int get hashCode => textColor.hashCode;
 }

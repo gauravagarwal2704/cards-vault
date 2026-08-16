@@ -1,5 +1,5 @@
 name: cards_wallet
-description: "A credit card wallet app with NFC card reading capability."
+description: "CardVault — a secure card organizer with NFC card reading capability."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.2.1+7
 
 environment:
   sdk: ^3.13.0
@@ -74,9 +74,6 @@ dependencies:
   
   # OCR and Camera functionality
   google_mlkit_text_recognition: ^0.13.0
-  google_mlkit_digital_ink_recognition: ^0.12.0
-  flutter_tesseract_ocr: ^0.4.28
-  tflite_flutter: ^0.12.1
   image_picker: ^1.0.7
   image: ^4.1.7
   camera: ^0.10.5+9
@@ -112,9 +109,19 @@ flutter:
   
   assets:
     - assets/
+    - assets/branding/
     - assets/banks-logo-small/
     - assets/banks-logo-large/
     - assets/networks/
+    - assets/card_backgrounds/gradient/
+    - assets/card_backgrounds/dual_tone/
+    - assets/card_backgrounds/abstract/
+    - assets/card_backgrounds/designer/
+    - assets/card_backgrounds/designer_2/
+    - assets/card_backgrounds/gradient_blur/
+    - assets/card_backgrounds/glassmorphism/
+    - assets/card_backgrounds/monochrome/
+    - assets/card_backgrounds/image/
 
   fonts:
     - family: Outfit

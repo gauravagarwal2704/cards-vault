@@ -1,0 +1,24 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="350" height="220" viewBox="1 1080 350 220" fill="none"><title>Designer 01</title><defs><linearGradient id="paint120_linear_7_287" x1="1" y1="1190" x2="351" y2="1190" gradientUnits="userSpaceOnUse">
+<stop stop-color="#832388" />
+<stop offset="0.508333" stop-color="#932883" />
+<stop offset="1" stop-color="#A32E7E" />
+</linearGradient>
+<linearGradient id="paint118_linear_7_287" x1="1" y1="1190" x2="351" y2="1190" gradientUnits="userSpaceOnUse">
+<stop stop-color="#832388" />
+<stop offset="0.508333" stop-color="#932883" />
+<stop offset="1" stop-color="#A32E7E" />
+</linearGradient>
+<linearGradient id="paint117_linear_7_287" x1="1" y1="1190" x2="351" y2="1190" gradientUnits="userSpaceOnUse">
+<stop stop-color="#832388" />
+<stop offset="0.508333" stop-color="#932883" />
+<stop offset="1" stop-color="#A32E7E" />
+</linearGradient>
+</defs><rect x="1" y="1080" width="350" height="220" rx="12" fill="url(#paint117_linear_7_287)" />
+<mask id="mask53_7_287" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="1" y="1080" width="350" height="220">
+<rect x="1" y="1080" width="350" height="220" rx="12" fill="url(#paint118_linear_7_287)" fill-opacity="0.1" />
+</mask>
+<mask id="mask54_7_287" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="1" y="1080" width="350" height="220">
+<rect x="1" y="1080" width="350" height="220" rx="12" fill="url(#paint120_linear_7_287)" />
+</mask>
+</svg>

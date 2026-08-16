@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -8,7 +9,7 @@ class SecurityService {
   SecurityService._internal();
 
   static const MethodChannel _channel = MethodChannel('cards_wallet/security');
-  
+
   int _preventionRefCount = 0;
 
   Future<void> enableScreenshotPrevention() async {
@@ -47,4 +48,3 @@ class SecurityService {
     }
   }
 }
-

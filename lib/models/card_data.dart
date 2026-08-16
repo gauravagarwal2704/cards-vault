@@ -1,15 +1,12 @@
+// Initializing formals cannot preserve the public constructor labels while
+// assigning these private encrypted fields.
+// ignore_for_file: prefer_initializing_formals
+
 import '../services/encryption_service.dart';
 
-enum ReadMethod {
-  nfc,
-  camera,
-  manual,
-}
+enum ReadMethod { nfc, camera, manual }
 
-enum CardCategory {
-  credit,
-  debit,
-}
+enum CardCategory { credit, debit }
 
 class CardData {
   final String _encryptedCardNumber;
@@ -28,6 +25,11 @@ class CardData {
   final String? bankId;
   final String? cardNickname;
   final String? designId;
+  final int? customGradientStartColor;
+  final int? customGradientEndColor;
+  final double customGradientAngle;
+  final String? customBackgroundImagePath;
+  final double backgroundImageBlur;
   final String? notes;
   final List<String> attachmentIds;
   final String? groupId;
@@ -49,16 +51,21 @@ class CardData {
     this.bankId,
     this.cardNickname,
     this.designId,
+    this.customGradientStartColor,
+    this.customGradientEndColor,
+    this.customGradientAngle = 135,
+    this.customBackgroundImagePath,
+    this.backgroundImageBlur = 0,
     this.notes,
     this.attachmentIds = const [],
     this.groupId,
-  })  : _encryptedCardNumber = encryptedCardNumber,
-        _encryptedExpiryDate = encryptedExpiryDate,
-        _encryptedCardholderName = encryptedCardholderName,
-        _encryptedCvv = encryptedCvv,
-        _encryptedAccountNumber = encryptedAccountNumber,
-        _encryptedIfscCode = encryptedIfscCode,
-        _encryptedUpiId = encryptedUpiId;
+  }) : _encryptedCardNumber = encryptedCardNumber,
+       _encryptedExpiryDate = encryptedExpiryDate,
+       _encryptedCardholderName = encryptedCardholderName,
+       _encryptedCvv = encryptedCvv,
+       _encryptedAccountNumber = encryptedAccountNumber,
+       _encryptedIfscCode = encryptedIfscCode,
+       _encryptedUpiId = encryptedUpiId;
 
   static Future<CardData> fromPlaintext({
     required String cardNumber,
@@ -76,18 +83,23 @@ class CardData {
     String? bankId,
     String? cardNickname,
     String? designId,
+    int? customGradientStartColor,
+    int? customGradientEndColor,
+    double customGradientAngle = 135,
+    String? customBackgroundImagePath,
+    double backgroundImageBlur = 0,
     String? notes,
     List<String>? attachmentIds,
     String? groupId,
   }) async {
     final encryptionService = EncryptionService();
-    
+
     final encryptedCardNumber = await encryptionService.encrypt(cardNumber);
     final encryptedExpiryDate = await encryptionService.encrypt(expiryDate);
-    final encryptedCardholderName = cardholderName != null 
+    final encryptedCardholderName = cardholderName != null
         ? await encryptionService.encrypt(cardholderName)
         : null;
-    final encryptedCvv = cvv != null 
+    final encryptedCvv = cvv != null
         ? await encryptionService.encrypt(cvv)
         : null;
     final encryptedAccountNumber = accountNumber != null
@@ -99,8 +111,8 @@ class CardData {
     final encryptedUpiId = upiId != null
         ? await encryptionService.encrypt(upiId)
         : null;
-    
-    final lastFour = cardNumber.length >= 4 
+
+    final lastFour = cardNumber.length >= 4
         ? cardNumber.substring(cardNumber.length - 4)
         : cardNumber;
 
@@ -121,6 +133,11 @@ class CardData {
       bankId: bankId,
       cardNickname: cardNickname,
       designId: designId,
+      customGradientStartColor: customGradientStartColor,
+      customGradientEndColor: customGradientEndColor,
+      customGradientAngle: customGradientAngle,
+      customBackgroundImagePath: customBackgroundImagePath,
+      backgroundImageBlur: backgroundImageBlur,
       notes: notes,
       attachmentIds: attachmentIds ?? const [],
       groupId: groupId,
@@ -176,7 +193,8 @@ class CardData {
 
   String get maskedCvv => '***';
 
-  String get categoryName => cardCategory == CardCategory.credit ? 'Credit' : 'Debit';
+  String get categoryName =>
+      cardCategory == CardCategory.credit ? 'Credit' : 'Debit';
 
   Future<String> getFormattedCardNumber() async {
     final cardNumber = await getDecryptedCardNumber();
@@ -203,15 +221,24 @@ class CardData {
     String? bankId,
     String? cardNickname,
     String? designId,
+    int? customGradientStartColor,
+    int? customGradientEndColor,
+    double? customGradientAngle,
+    String? customBackgroundImagePath,
+    double? backgroundImageBlur,
     String? notes,
     List<String>? attachmentIds,
     String? groupId,
     bool clearGroup = false,
+    bool clearDesign = false,
+    bool clearCustomGradient = false,
+    bool clearCustomBackgroundImage = false,
   }) {
     return CardData(
       encryptedCardNumber: encryptedCardNumber ?? _encryptedCardNumber,
       encryptedExpiryDate: encryptedExpiryDate ?? _encryptedExpiryDate,
-      encryptedCardholderName: encryptedCardholderName ?? _encryptedCardholderName,
+      encryptedCardholderName:
+          encryptedCardholderName ?? _encryptedCardholderName,
       encryptedCvv: encryptedCvv ?? _encryptedCvv,
       encryptedAccountNumber: encryptedAccountNumber ?? _encryptedAccountNumber,
       encryptedIfscCode: encryptedIfscCode ?? _encryptedIfscCode,
@@ -224,7 +251,18 @@ class CardData {
       cardCategory: cardCategory ?? this.cardCategory,
       bankId: bankId ?? this.bankId,
       cardNickname: cardNickname ?? this.cardNickname,
-      designId: designId ?? this.designId,
+      designId: clearDesign ? null : (designId ?? this.designId),
+      customGradientStartColor: clearCustomGradient
+          ? null
+          : (customGradientStartColor ?? this.customGradientStartColor),
+      customGradientEndColor: clearCustomGradient
+          ? null
+          : (customGradientEndColor ?? this.customGradientEndColor),
+      customGradientAngle: customGradientAngle ?? this.customGradientAngle,
+      customBackgroundImagePath: clearCustomBackgroundImage
+          ? null
+          : (customBackgroundImagePath ?? this.customBackgroundImagePath),
+      backgroundImageBlur: backgroundImageBlur ?? this.backgroundImageBlur,
       notes: notes ?? this.notes,
       attachmentIds: attachmentIds ?? this.attachmentIds,
       groupId: clearGroup ? null : (groupId ?? this.groupId),
@@ -249,6 +287,11 @@ class CardData {
       'bankId': bankId,
       'cardNickname': cardNickname,
       'designId': designId,
+      'customGradientStartColor': customGradientStartColor,
+      'customGradientEndColor': customGradientEndColor,
+      'customGradientAngle': customGradientAngle,
+      'customBackgroundImagePath': customBackgroundImagePath,
+      'backgroundImageBlur': backgroundImageBlur,
       'notes': notes,
       'attachmentIds': attachmentIds,
       'groupId': groupId,
@@ -267,7 +310,7 @@ class CardData {
       lastFourDigits: json['lastFourDigits'] as String,
       cardType: json['cardType'] as String,
       id: json['id'] as String?,
-      savedDate: json['savedDate'] != null 
+      savedDate: json['savedDate'] != null
           ? DateTime.parse(json['savedDate'] as String)
           : null,
       readMethod: json['readMethod'] != null
@@ -285,8 +328,17 @@ class CardData {
       bankId: json['bankId'] as String?,
       cardNickname: json['cardNickname'] as String?,
       designId: json['designId'] as String?,
+      customGradientStartColor: (json['customGradientStartColor'] as num?)
+          ?.toInt(),
+      customGradientEndColor: (json['customGradientEndColor'] as num?)?.toInt(),
+      customGradientAngle:
+          (json['customGradientAngle'] as num?)?.toDouble() ?? 135,
+      customBackgroundImagePath: json['customBackgroundImagePath'] as String?,
+      backgroundImageBlur:
+          (json['backgroundImageBlur'] as num?)?.toDouble() ?? 0,
       notes: json['notes'] as String?,
-      attachmentIds: (json['attachmentIds'] as List<dynamic>?)
+      attachmentIds:
+          (json['attachmentIds'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??
           const [],
@@ -296,53 +348,53 @@ class CardData {
 
   static bool isValidCardNumber(String cardNumber) {
     String cleaned = cardNumber.replaceAll(RegExp(r'[\s\-]'), '');
-    
+
     if (cleaned.length < 13 || cleaned.length > 19) {
       return false;
     }
-    
+
     if (!RegExp(r'^\d+$').hasMatch(cleaned)) {
       return false;
     }
-    
+
     return _luhnCheck(cleaned);
   }
 
   static bool _luhnCheck(String cardNumber) {
     int sum = 0;
     bool alternate = false;
-    
+
     for (int i = cardNumber.length - 1; i >= 0; i--) {
       int digit = int.parse(cardNumber[i]);
-      
+
       if (alternate) {
         digit *= 2;
         if (digit > 9) {
           digit -= 9;
         }
       }
-      
+
       sum += digit;
       alternate = !alternate;
     }
-    
+
     return sum % 10 == 0;
   }
 
   static bool isValidExpiryDate(String expiryDate) {
     RegExp expiryPattern = RegExp(r'^(0[1-9]|1[0-2])/(\d{2})$');
-    
+
     if (!expiryPattern.hasMatch(expiryDate)) {
       return false;
     }
-    
+
     List<String> parts = expiryDate.split('/');
     int month = int.parse(parts[0]);
     int year = int.parse(parts[1]) + 2000;
-    
+
     DateTime now = DateTime.now();
     DateTime cardExpiry = DateTime(year, month + 1, 0);
-    
+
     return cardExpiry.isAfter(now);
   }
 

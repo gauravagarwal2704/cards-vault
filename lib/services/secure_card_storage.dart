@@ -1,13 +1,18 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
+
 import '../models/card_data.dart';
 import '../models/card_group.dart';
+
 import 'package:uuid/uuid.dart';
+
 import 'backup_crypto.dart';
 import 'card_attachment_storage.dart';
+import 'card_background_storage.dart';
 import 'card_group_storage.dart';
 import 'encryption_service.dart';
 
@@ -31,9 +36,7 @@ class SecureCardStorage {
       encryptedSharedPreferences: true,
       resetOnError: true,
     ),
-    iOptions: IOSOptions(
-      accessibility: KeychainAccessibility.first_unlock,
-    ),
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
   );
 
   static const String _cardsListKey = 'saved_cards_list';
@@ -54,7 +57,7 @@ class SecureCardStorage {
       );
 
       await _addCardIdToList(cardId);
-      
+
       return cardId;
     } catch (e) {
       throw Exception('Failed to save card: $e');
@@ -65,7 +68,7 @@ class SecureCardStorage {
     if (cardData.id == null) {
       throw Exception('Cannot update card without ID');
     }
-    
+
     try {
       final String cardJson = jsonEncode(cardData.toJson());
       await _secureStorage.write(
@@ -93,7 +96,7 @@ class SecureCardStorage {
     if (cardsListJson == null) {
       return [];
     }
-    
+
     try {
       final List<dynamic> decoded = jsonDecode(cardsListJson);
       return decoded.cast<String>();
@@ -109,7 +112,9 @@ class SecureCardStorage {
 
       for (String cardId in cardIds) {
         try {
-          final String? cardJson = await _secureStorage.read(key: '$_cardPrefix$cardId');
+          final String? cardJson = await _secureStorage.read(
+            key: '$_cardPrefix$cardId',
+          );
           if (cardJson != null) {
             final Map<String, dynamic> cardMap = jsonDecode(cardJson);
             final CardData card = CardData.fromJson(cardMap);
@@ -135,7 +140,9 @@ class SecureCardStorage {
 
   Future<CardData?> loadCard(String cardId) async {
     try {
-      final String? cardJson = await _secureStorage.read(key: '$_cardPrefix$cardId');
+      final String? cardJson = await _secureStorage.read(
+        key: '$_cardPrefix$cardId',
+      );
       if (cardJson == null) {
         return null;
       }
@@ -150,7 +157,7 @@ class SecureCardStorage {
   Future<void> deleteCard(String cardId) async {
     try {
       await _secureStorage.delete(key: '$_cardPrefix$cardId');
-      
+
       final List<String> cardIds = await _getCardIdsList();
       cardIds.remove(cardId);
       await _secureStorage.write(
@@ -159,6 +166,7 @@ class SecureCardStorage {
       );
 
       await CardAttachmentStorage().deleteAllForCard(cardId);
+      await CardBackgroundStorage().deleteAllForCard(cardId);
     } catch (e) {
       throw Exception('Failed to delete card: $e');
     }
@@ -167,12 +175,13 @@ class SecureCardStorage {
   Future<void> deleteAllCards() async {
     try {
       final List<String> cardIds = await _getCardIdsList();
-      
+
       for (String cardId in cardIds) {
         await _secureStorage.delete(key: '$_cardPrefix$cardId');
         await CardAttachmentStorage().deleteAllForCard(cardId);
+        await CardBackgroundStorage().deleteAllForCard(cardId);
       }
-      
+
       await _secureStorage.delete(key: _cardsListKey);
     } catch (e) {
       throw Exception('Failed to delete all cards: $e');
@@ -252,8 +261,9 @@ class SecureCardStorage {
     final salt = encryptionService.generateSalt();
     final exportedAt = DateTime.now().toIso8601String();
 
-    final photos =
-        includePhotos ? await _collectPhotos(cards) : <String, Uint8List>{};
+    final photos = includePhotos
+        ? await _collectPhotos(cards)
+        : <String, Uint8List>{};
 
     final resultMap = await compute(
       exportBackupBundleInIsolate,
@@ -307,6 +317,7 @@ class SecureCardStorage {
 
   Future<Map<String, Uint8List>> _collectPhotos(List<CardData> cards) async {
     final attachmentStorage = CardAttachmentStorage();
+    final backgroundStorage = CardBackgroundStorage();
     final photos = <String, Uint8List>{};
 
     for (final card in cards) {
@@ -315,6 +326,13 @@ class SecureCardStorage {
         final bytes = await attachmentStorage.loadBytes(card.id!, attachmentId);
         if (bytes == null) continue;
         photos['$backupPhotosDir/${card.id}/$attachmentId.jpg'] = bytes;
+      }
+      final backgroundBytes = await backgroundStorage.loadBytes(
+        card.customBackgroundImagePath,
+      );
+      if (backgroundBytes != null) {
+        photos['$backupPhotosDir/${card.id}/${CardBackgroundStorage.backupFileName}'] =
+            backgroundBytes;
       }
     }
 
@@ -404,6 +422,7 @@ class SecureCardStorage {
     }
 
     final attachmentStorage = CardAttachmentStorage();
+    final backgroundStorage = CardBackgroundStorage();
     final cardsList = manifest['cards'] as List<dynamic>;
 
     int importedCount = 0;
@@ -419,16 +438,33 @@ class SecureCardStorage {
         final attachmentIds = <String>[];
         for (final attachmentId
             in (map['attachmentIds'] as List<dynamic>? ?? [])) {
-          final bytes = photos['$backupPhotosDir/$sourceCardId/$attachmentId.jpg'];
+          final bytes =
+              photos['$backupPhotosDir/$sourceCardId/$attachmentId.jpg'];
           if (bytes == null) continue;
           attachmentIds.add(
             await attachmentStorage.saveAttachmentBytes(cardId, bytes),
           );
         }
 
-        if (attachmentIds.isNotEmpty) {
+        String? backgroundPath;
+        if (map['hasCustomBackgroundImage'] == true) {
+          final bytes =
+              photos['$backupPhotosDir/$sourceCardId/${CardBackgroundStorage.backupFileName}'];
+          if (bytes != null) {
+            backgroundPath = await backgroundStorage.saveBackgroundBytes(
+              cardId,
+              bytes,
+            );
+          }
+        }
+
+        if (attachmentIds.isNotEmpty || backgroundPath != null) {
           await updateCard(
-            card.copyWith(id: cardId, attachmentIds: attachmentIds),
+            card.copyWith(
+              id: cardId,
+              attachmentIds: attachmentIds,
+              customBackgroundImagePath: backgroundPath,
+            ),
           );
         }
 
@@ -470,6 +506,13 @@ class SecureCardStorage {
       bankId: map['bankId'] as String?,
       cardNickname: map['cardNickname'] as String?,
       designId: map['designId'] as String?,
+      customGradientStartColor: (map['customGradientStartColor'] as num?)
+          ?.toInt(),
+      customGradientEndColor: (map['customGradientEndColor'] as num?)?.toInt(),
+      customGradientAngle:
+          (map['customGradientAngle'] as num?)?.toDouble() ?? 135,
+      backgroundImageBlur:
+          (map['backgroundImageBlur'] as num?)?.toDouble() ?? 0,
       notes: map['notes'] as String?,
       groupId: map['groupId'] as String?,
     );
@@ -506,7 +549,9 @@ class SecureCardStorage {
             ).toMap(),
           );
         } catch (_) {
-          throw Exception('Decryption failed: wrong password or corrupted backup');
+          throw Exception(
+            'Decryption failed: wrong password or corrupted backup',
+          );
         }
       } else {
         decryptedJson = await encryptionService.decrypt(encryptedData);
@@ -542,13 +587,13 @@ class SecureCardStorage {
   Future<String?> getLastBackupDate() async {
     try {
       final directory = await _backupDirectory();
-      
+
       if (!await directory.exists()) {
         return null;
       }
-      
+
       final files = await directory.list().toList();
-      
+
       final backupFiles = files
           .whereType<File>()
           .where((file) => file.path.contains('cards_wallet_backup_'))
@@ -558,11 +603,11 @@ class SecureCardStorage {
 
       backupFiles.sort((a, b) => b.path.compareTo(a.path));
       final lastBackup = backupFiles.first;
-      
+
       final timestamp = lastBackup.path
           .split('cards_wallet_backup_')[1]
           .split('.')[0];
-      
+
       final date = DateTime.fromMillisecondsSinceEpoch(int.parse(timestamp));
       return date.toIso8601String();
     } catch (e) {
@@ -570,4 +615,3 @@ class SecureCardStorage {
     }
   }
 }
-

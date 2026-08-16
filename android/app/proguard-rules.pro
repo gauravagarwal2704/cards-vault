@@ -25,6 +25,10 @@
 -keep class org.tensorflow.lite.** { *; }
 -dontwarn org.tensorflow.lite.gpu.**
 
+# uCrop (image_cropper) references OkHttp for remote image URIs.
+-dontwarn okhttp3.**
+-dontwarn okio.**
+
 # Play Core (deferred components)
 -dontwarn com.google.android.play.core.**
 -keep class com.google.android.play.core.** { *; }

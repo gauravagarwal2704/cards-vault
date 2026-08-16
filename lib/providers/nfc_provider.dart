@@ -1,21 +1,17 @@
 import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_nfc_kit/flutter_nfc_kit.dart';
+
 import '../models/card_data.dart';
 import '../services/nfc_service.dart';
 
-enum NfcState {
-  idle,
-  checking,
-  scanning,
-  success,
-  error,
-}
+enum NfcState { idle, checking, scanning, success, error }
 
 class NfcProvider extends ChangeNotifier with WidgetsBindingObserver {
   final NfcService _nfcService = NfcService();
-  
+
   NfcState _state = NfcState.idle;
   CardData? _cardData;
   String? _errorMessage;
@@ -71,12 +67,12 @@ class NfcProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     try {
       CardData? card = await _nfcService.readCard();
-      
+
       if (card != null) {
         _cardData = card;
         _state = NfcState.success;
         _errorMessage = null;
-        
+
         _clearTimer?.cancel();
         _clearTimer = Timer(_dataTimeout, () {
           clearCardData();
@@ -88,9 +84,11 @@ class NfcProvider extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
     } on PlatformException catch (e) {
       _state = NfcState.error;
-      
+
       if (e.code == 'IOS_NOT_SUPPORTED') {
-        _errorMessage = e.message ?? 'NFC Card reading not supported on iOS, please use Camera';
+        _errorMessage =
+            e.message ??
+            'NFC Card reading not supported on iOS, please use Camera';
       } else if (e.code == '408') {
         _errorMessage = 'NFC session timeout. Please try again.';
       } else if (e.code == '200') {
@@ -100,35 +98,41 @@ class NfcProvider extends ChangeNotifier with WidgetsBindingObserver {
       } else {
         _errorMessage = 'NFC Error: ${e.message ?? e.code}';
       }
-      
+
       notifyListeners();
     } catch (e) {
       _state = NfcState.error;
-      
+
       String errorString = e.toString().toLowerCase();
-      
+
       if (errorString.contains('6985')) {
         _errorMessage = 'This card has NFC reading restrictions. Please use Camera Scan or Manual Entry instead.';
       } else if (errorString.contains('timeout')) {
         _errorMessage = 'NFC session timeout. Please try again.';
-      } else if (errorString.contains('cancelled') || errorString.contains('canceled')) {
+      } else if (errorString.contains('cancelled') ||
+          errorString.contains('canceled')) {
         _errorMessage = 'NFC session cancelled.';
-      } else if (errorString.contains('not available') || errorString.contains('disabled')) {
-        _errorMessage = 'NFC is not available or disabled. Please enable NFC in settings.';
+      } else if (errorString.contains('not available') ||
+          errorString.contains('disabled')) {
+        _errorMessage =
+            'NFC is not available or disabled. Please enable NFC in settings.';
       } else if (errorString.contains('unsupported')) {
         _errorMessage = 'This card type is not supported.';
-      } else if (errorString.contains('pan') || errorString.contains('card number')) {
+      } else if (errorString.contains('pan') ||
+          errorString.contains('card number')) {
         _errorMessage = 'Could not read card number. Please try again.';
       } else if (errorString.contains('expiry')) {
         _errorMessage = 'Could not read expiry date. Please try again.';
-      } else if (errorString.contains('aid') && !errorString.contains('failed')) {
-        _errorMessage = 'Card not recognized. Please ensure it\'s a valid payment card.';
+      } else if (errorString.contains('aid') &&
+          !errorString.contains('failed')) {
+        _errorMessage =
+            'Card not recognized. Please ensure it\'s a valid payment card.';
       } else if (errorString.contains('ppse')) {
         _errorMessage = 'Failed to communicate with card. Please try again.';
       } else {
         _errorMessage = 'Failed to read card. Please try again.';
       }
-      
+
       notifyListeners();
     }
   }
@@ -160,12 +164,12 @@ class NfcProvider extends ChangeNotifier with WidgetsBindingObserver {
     _cardData = cardData;
     _state = NfcState.success;
     _errorMessage = null;
-    
+
     _clearTimer?.cancel();
     _clearTimer = Timer(_dataTimeout, () {
       clearCardData();
     });
-    
+
     notifyListeners();
   }
 
@@ -176,4 +180,3 @@ class NfcProvider extends ChangeNotifier with WidgetsBindingObserver {
     super.dispose();
   }
 }
-

@@ -166,6 +166,7 @@ class _AppLockOverlay extends StatelessWidget {
     return Semantics(
       scopesRoute: true,
       namesRoute: true,
+      explicitChildNodes: true,
       label: 'CardVault locked',
       child: Center(
         child: Column(

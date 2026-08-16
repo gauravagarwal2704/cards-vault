@@ -116,6 +116,24 @@ void main() {
     expect(find.byType(TextField), findsNothing);
   });
 
+  testWidgets('locked startup exposes a valid semantic route', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'profile_display_name': 'Avery',
+      'app_lock_enabled': true,
+    });
+    final semantics = tester.ensureSemantics();
+
+    await tester.pumpWidget(const MyApp());
+    await tester.pump(const Duration(milliseconds: 1400));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('CardVault is locked'), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp(r'CardVault locked')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    semantics.dispose();
+  });
+
   testWidgets('display name dialog can be cancelled and saved safely', (
     tester,
   ) async {

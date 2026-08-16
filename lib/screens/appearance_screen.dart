@@ -32,6 +32,12 @@ class AppearanceScreen extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xxl),
           AppSection(
+            title: 'Palette style',
+            description: 'Compare a focused palette with a more colorful one. Device colors still follow your system.',
+            child: _PaletteStrategySelector(provider: provider),
+          ),
+          const SizedBox(height: AppSpacing.xxl),
+          AppSection(
             title: 'Color theme',
             description: 'Changes buttons, highlights, and tonal surfaces.',
             child: Column(
@@ -158,6 +164,13 @@ class _AppearancePreview extends StatelessWidget {
                       color: scheme.onSurfaceVariant,
                     ),
                   ),
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    provider.paletteStrategy.label,
+                    style: AppTypography.caption(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
                   const SizedBox(height: AppSpacing.md),
                   Row(
                     children: [
@@ -187,6 +200,117 @@ class _PreviewDot extends StatelessWidget {
       height: 22,
       margin: const EdgeInsets.only(right: 5),
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    );
+  }
+}
+
+class _PaletteStrategySelector extends StatelessWidget {
+  const _PaletteStrategySelector({required this.provider});
+
+  final ThemeProvider provider;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final textScale = MediaQuery.textScalerOf(context).scale(1);
+        final stacked = constraints.maxWidth < 430 || textScale >= 1.5;
+        final cards = [
+          for (final strategy in config.AppPaletteStrategy.values)
+            _PaletteStrategyCard(
+              strategy: strategy,
+              selected: provider.paletteStrategy == strategy,
+              seedColor: provider.seedColor,
+              onTap: () => provider.setPaletteStrategy(strategy),
+            ),
+        ];
+
+        if (stacked) {
+          return Column(
+            children: [
+              for (var index = 0; index < cards.length; index++) ...[
+                cards[index],
+                if (index != cards.length - 1)
+                  const SizedBox(height: AppSpacing.sm),
+              ],
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: cards.first),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(child: cards.last),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _PaletteStrategyCard extends StatelessWidget {
+  const _PaletteStrategyCard({
+    required this.strategy,
+    required this.selected,
+    required this.seedColor,
+    required this.onTap,
+  });
+
+  final config.AppPaletteStrategy strategy;
+  final bool selected;
+  final Color seedColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final preview = ColorScheme.fromSeed(
+      seedColor: seedColor,
+      brightness: scheme.brightness,
+      dynamicSchemeVariant: strategy.schemeVariant,
+    );
+
+    return AppSurface(
+      onTap: onTap,
+      semanticLabel: '${strategy.label}. ${strategy.description}',
+      selected: selected,
+      color: selected ? scheme.primaryContainer : scheme.surfaceContainerLow,
+      border: BorderSide(
+        color: selected ? scheme.primary : scheme.outlineVariant,
+        width: selected ? 2 : 1,
+      ),
+      shape: selected ? AppShapes.large : AppShapes.medium,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _PreviewDot(color: preview.primary),
+              _PreviewDot(color: preview.secondary),
+              _PreviewDot(color: preview.tertiary),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            strategy.label,
+            style: AppTypography.label(
+              color: selected ? scheme.onPrimaryContainer : scheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            strategy.description,
+            style: AppTypography.caption(
+              color: selected
+                  ? scheme.onPrimaryContainer.withValues(alpha: 0.78)
+                  : scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -413,6 +537,7 @@ class _PaletteGrid extends StatelessWidget {
                 width: width,
                 child: _PaletteTile(
                   option: option,
+                  schemeVariant: provider.schemeVariant,
                   selected:
                       provider.colorSource == config.AppColorSource.preset &&
                       provider.accentId == option.id,
@@ -429,10 +554,12 @@ class _PaletteGrid extends StatelessWidget {
 class _PaletteTile extends StatelessWidget {
   const _PaletteTile({
     required this.option,
+    required this.schemeVariant,
     required this.selected,
     required this.onTap,
   });
   final config.AccentColorOption option;
+  final DynamicSchemeVariant schemeVariant;
   final bool selected;
   final VoidCallback onTap;
 
@@ -442,7 +569,7 @@ class _PaletteTile extends StatelessWidget {
     final palette = ColorScheme.fromSeed(
       seedColor: option.seedColor,
       brightness: scheme.brightness,
-      dynamicSchemeVariant: option.schemeVariant,
+      dynamicSchemeVariant: schemeVariant,
     );
     return AppSurface(
       onTap: onTap,

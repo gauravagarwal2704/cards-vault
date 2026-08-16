@@ -11,9 +11,12 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   static const String _seedColorKey = 'appearance_seed_color';
   static const String _accentIdKey = 'appearance_accent_id';
   static const String _customColorKey = 'appearance_is_custom';
+  static const String _paletteStrategyKey = 'appearance_palette_strategy';
 
   config.AppBrightnessMode _brightnessMode = config.AppBrightnessMode.system;
   config.AppColorSource _colorSource = config.AppColorSource.preset;
+  config.AppPaletteStrategy _paletteStrategy =
+      config.AppPaletteStrategy.expressive;
   Color _seedColor = config.AccentColorOption.indigo.seedColor;
   String? _accentId = config.AccentColorOption.indigo.id;
   Brightness _platformBrightness = Brightness.light;
@@ -42,6 +45,8 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   config.AppBrightnessMode get brightnessMode => _brightnessMode;
   config.AppBrightnessMode get currentMode => _brightnessMode;
   config.AppColorSource get colorSource => _colorSource;
+  config.AppPaletteStrategy get paletteStrategy => _paletteStrategy;
+  DynamicSchemeVariant get schemeVariant => _paletteStrategy.schemeVariant;
   Color get seedColor => _seedColor;
   String? get accentId => _accentId;
   bool get isCustomColor => _colorSource == config.AppColorSource.custom;
@@ -73,32 +78,24 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool get isDarkMode => colorScheme.brightness == Brightness.dark;
   bool get isAmoled => _brightnessMode == config.AppBrightnessMode.amoled;
 
-  DynamicSchemeVariant get _schemeVariant {
-    if (_colorSource == config.AppColorSource.custom) {
-      return DynamicSchemeVariant.expressive;
-    }
-    final preset = config.AccentColorOption.findById(_accentId ?? '');
-    return preset?.schemeVariant ?? DynamicSchemeVariant.expressive;
-  }
-
   void _rebuildThemes() {
     final useSystemColors = _colorSource == config.AppColorSource.system;
     _lightTheme = AppTheme.build(
       brightnessMode: config.AppBrightnessMode.light,
       seedColor: _seedColor,
-      schemeVariant: _schemeVariant,
+      schemeVariant: schemeVariant,
       useSystemColors: useSystemColors,
     );
     _darkTheme = AppTheme.build(
       brightnessMode: config.AppBrightnessMode.dark,
       seedColor: _seedColor,
-      schemeVariant: _schemeVariant,
+      schemeVariant: schemeVariant,
       useSystemColors: useSystemColors,
     );
     _oledTheme = AppTheme.build(
       brightnessMode: config.AppBrightnessMode.amoled,
       seedColor: _seedColor,
-      schemeVariant: _schemeVariant,
+      schemeVariant: schemeVariant,
       useSystemColors: useSystemColors,
     );
   }
@@ -112,6 +109,14 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       final savedSeed = prefs.getInt(_seedColorKey);
       final savedAccentId = prefs.getString(_accentIdKey);
       final savedCustom = prefs.getBool(_customColorKey);
+      final savedPaletteStrategy = prefs.getString(_paletteStrategyKey);
+
+      if (savedPaletteStrategy != null) {
+        _paletteStrategy = config.AppPaletteStrategy.values.firstWhere(
+          (strategy) => strategy.name == savedPaletteStrategy,
+          orElse: () => config.AppPaletteStrategy.expressive,
+        );
+      }
 
       if (savedBrightness != null || savedSeed != null) {
         if (savedBrightness != null) {
@@ -173,6 +178,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         _customColorKey,
         _colorSource == config.AppColorSource.custom,
       );
+      await prefs.setString(_paletteStrategyKey, _paletteStrategy.name);
       if (_accentId != null) {
         await prefs.setString(_accentIdKey, _accentId!);
       } else {
@@ -186,6 +192,14 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> setBrightnessMode(config.AppBrightnessMode mode) async {
     if (_brightnessMode == mode) return;
     _brightnessMode = mode;
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> setPaletteStrategy(config.AppPaletteStrategy strategy) async {
+    if (_paletteStrategy == strategy) return;
+    _paletteStrategy = strategy;
+    _rebuildThemes();
     await _persist();
     notifyListeners();
   }

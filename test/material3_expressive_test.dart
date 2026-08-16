@@ -25,6 +25,7 @@ void main() {
     expect(provider.darkTheme.extension<AppSemanticColors>(), isNotNull);
     expect(provider.lightTheme.chipTheme.showCheckmark, isFalse);
     expect(provider.darkTheme.chipTheme.showCheckmark, isFalse);
+    expect(provider.paletteStrategy, config.AppPaletteStrategy.expressive);
     expect(provider.materialThemeMode, ThemeMode.system);
 
     await provider.setBrightnessMode(config.AppBrightnessMode.amoled);
@@ -54,6 +55,13 @@ void main() {
     expect(provider.colorSource, config.AppColorSource.preset);
     expect(provider.accentId, config.AccentColorOption.orchid.id);
 
+    final expressivePrimary = provider.lightTheme.colorScheme.primary;
+    await provider.setPaletteStrategy(config.AppPaletteStrategy.tonalSpot);
+    expect(provider.paletteStrategy, config.AppPaletteStrategy.tonalSpot);
+    expect(provider.schemeVariant, DynamicSchemeVariant.tonalSpot);
+    expect(provider.lightTheme.colorScheme.primary, isNot(expressivePrimary));
+    expect(provider.seedColor, config.AccentColorOption.orchid.seedColor);
+
     const custom = Color(0xFF7A3DF0);
     await provider.setCustomSeedColor(custom);
     expect(provider.colorSource, config.AppColorSource.custom);
@@ -63,6 +71,12 @@ void main() {
     final preferences = await SharedPreferences.getInstance();
     expect(preferences.getString('appearance_color_source'), 'custom');
     expect(preferences.getInt('appearance_seed_color'), custom.toARGB32());
+    expect(preferences.getString('appearance_palette_strategy'), 'tonalSpot');
+
+    final restored = ThemeProvider();
+    addTearDown(restored.dispose);
+    await tester.pump();
+    expect(restored.paletteStrategy, config.AppPaletteStrategy.tonalSpot);
   });
 
   testWidgets('appearance remains usable at 200 percent text scale', (
@@ -94,6 +108,13 @@ void main() {
     expect(find.text('Light'), findsOneWidget);
     expect(find.text('Dark'), findsOneWidget);
     expect(find.text('OLED black'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Palette style'),
+      260,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Tonal spot'), findsWidgets);
+    expect(find.text('Expressive'), findsWidgets);
     expect(
       find.bySemanticsLabel(
         RegExp(r'System.*Follows your device', dotAll: true),

@@ -4,17 +4,35 @@ enum AppBrightnessMode { system, light, dark, amoled }
 
 enum AppColorSource { system, preset, custom }
 
+enum AppPaletteStrategy {
+  tonalSpot,
+  expressive;
+
+  DynamicSchemeVariant get schemeVariant => switch (this) {
+    AppPaletteStrategy.tonalSpot => DynamicSchemeVariant.tonalSpot,
+    AppPaletteStrategy.expressive => DynamicSchemeVariant.expressive,
+  };
+
+  String get label => switch (this) {
+    AppPaletteStrategy.tonalSpot => 'Tonal spot',
+    AppPaletteStrategy.expressive => 'Expressive',
+  };
+
+  String get description => switch (this) {
+    AppPaletteStrategy.tonalSpot => 'Keeps your chosen color dominant',
+    AppPaletteStrategy.expressive => 'Uses contrasting supporting colors',
+  };
+}
+
 class AccentColorOption {
   final String id;
   final String name;
   final Color seedColor;
-  final DynamicSchemeVariant schemeVariant;
 
   const AccentColorOption({
     required this.id,
     required this.name,
     required this.seedColor,
-    this.schemeVariant = DynamicSchemeVariant.expressive,
   });
 
   static const AccentColorOption indigo = AccentColorOption(
@@ -81,7 +99,6 @@ class AccentColorOption {
     id: 'graphite',
     name: 'Graphite',
     seedColor: Color(0xFF64748B),
-    schemeVariant: DynamicSchemeVariant.neutral,
   );
 
   static const List<AccentColorOption> presets = [

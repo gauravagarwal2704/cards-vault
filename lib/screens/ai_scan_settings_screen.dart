@@ -449,7 +449,10 @@ class _AiScanSettingsScreenState extends State<AiScanSettingsScreen> {
           SwitchListTile(
             value: _loggingEnabled,
             onChanged: _setLoggingEnabled,
-            secondary: Icon(Icons.history_outlined, color: theme.seedColor),
+            secondary: Icon(
+              Icons.history_outlined,
+              color: theme.getPrimaryColor(),
+            ),
             title: Text(
               'Encrypted diagnostic logs',
               style: AppTypography.listItem(color: primary)

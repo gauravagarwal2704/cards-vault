@@ -702,7 +702,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   }),
                   trackColor: WidgetStateProperty.resolveWith((states) {
                     if (states.contains(WidgetState.selected)) {
-                      return themeProvider.seedColor;
+                      return scheme.primary;
                     }
                     return themeProvider.colorScheme.surfaceContainerHighest;
                   }),

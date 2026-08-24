@@ -247,8 +247,8 @@ void main() {
   test('Gradient 2.0 previews contain no hard rasterization seams', () {
     for (final number in [2, 3, 4, 6, 7, 8]) {
       final path =
-          'assets/card_backgrounds/gradient_blur/${number.toString().padLeft(2, '0')}.png';
-      final image = image_lib.decodePng(File(path).readAsBytesSync());
+          'assets/card_backgrounds/gradient_blur/${number.toString().padLeft(2, '0')}.webp';
+      final image = image_lib.decodeImage(File(path).readAsBytesSync());
       expect(image, isNotNull, reason: path);
 
       final (columnJump, rowJump) = _largestInteriorEdgeJump(image!);

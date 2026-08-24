@@ -54,6 +54,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
   bool _isLoading = true;
   bool _showAddOptions = false;
   bool _hasShownUnreadableDetailsWarning = false;
+  int _loadGeneration = 0;
   final Set<String> _selectedCardIds = {};
   final SearchController _searchController = SearchController();
   String _searchQuery = '';
@@ -161,6 +162,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
 
   Future<void> _loadCards() async {
     if (!mounted) return;
+    final generation = ++_loadGeneration;
     setState(() => _isLoading = true);
 
     try {
@@ -187,7 +189,10 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
         }
       }
 
-      if (!mounted) return;
+      // Navigation and settings callbacks can request another reload while an
+      // older one is still decrypting names. Only the newest snapshot may
+      // replace the wallet shown on screen.
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _cards = cards;
         _groups = groups;
@@ -216,7 +221,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
         );
       }
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1338,11 +1343,17 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
               size: 28,
             ),
             onPressed: () async {
-              await Navigator.push(
+              // Only import/delete operations call back into the wallet. Smart
+              // Scan, appearance, and security settings therefore cannot
+              // replace the full in-memory list with a transient partial read
+              // from secure storage when the route closes.
+              await Navigator.push<void>(
                 context,
-                MaterialPageRoute(builder: (context) => const SettingsScreen()),
+                MaterialPageRoute(
+                  builder: (context) =>
+                      SettingsScreen(onCardsChanged: _loadCards),
+                ),
               );
-              if (mounted) await _loadCards();
             },
           ),
         ],

@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/theme_config.dart' as config;
+import '../models/app_icon_option.dart';
+import '../providers/app_icon_provider.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_motion.dart';
 import '../theme/app_shapes.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 import '../widgets/app_design_system.dart';
+import '../widgets/app_icon_artwork.dart';
 
 class AppearanceScreen extends StatelessWidget {
   const AppearanceScreen({super.key});
@@ -15,6 +18,7 @@ class AppearanceScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ThemeProvider>();
+    final appIconProvider = context.watch<AppIconProvider>();
     final width = MediaQuery.sizeOf(context).width;
     final horizontal = AppSpacing.pageHorizontal(width);
 
@@ -50,7 +54,156 @@ class AppearanceScreen extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: AppSpacing.xxl),
+          AppSection(
+            title: 'App icon',
+            description:
+                'Changes the launcher, splash, and CardVault branding.',
+            child: _AppIconGrid(provider: appIconProvider),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _AppIconGrid extends StatelessWidget {
+  const _AppIconGrid({required this.provider});
+
+  final AppIconProvider provider;
+
+  Future<void> _select(BuildContext context, AppIconOption option) async {
+    final error = await provider.selectIcon(option);
+    if (!context.mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(error ?? '${option.label} app icon selected'),
+        backgroundColor: error == null
+            ? null
+            : Theme.of(context).colorScheme.error,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const minimumSlotWidth = 68.0;
+        const gap = AppSpacing.xxs;
+        final columns =
+            ((constraints.maxWidth + gap) / (minimumSlotWidth + gap))
+                .floor()
+                .clamp(1, AppIconCatalog.options.length);
+        final width = (constraints.maxWidth - (gap * (columns - 1))) / columns;
+        final scaledLabelHeight =
+            MediaQuery.textScalerOf(context).scale(12) * 1.35;
+        final height = 82 + scaledLabelHeight;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final option in AppIconCatalog.options)
+              SizedBox(
+                width: width,
+                height: height,
+                child: _AppIconTile(
+                  option: option,
+                  selected: provider.selected.id == option.id,
+                  enabled: !provider.isChanging,
+                  onTap: () => _select(context, option),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _AppIconTile extends StatelessWidget {
+  const _AppIconTile({
+    required this.option,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final AppIconOption option;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final labelColor = selected ? scheme.primary : scheme.onSurface;
+    return Semantics(
+      key: ValueKey('app-icon-${option.id}'),
+      button: true,
+      selected: selected,
+      enabled: enabled,
+      label: '${option.label} app icon, ${option.description}',
+      child: ExcludeSemantics(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: enabled ? onTap : null,
+            borderRadius: BorderRadius.circular(18),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      AppIconArtwork(
+                        option: option,
+                        size: 56,
+                        borderRadius: 15,
+                      ),
+                      if (selected)
+                        Positioned(
+                          right: -4,
+                          top: -4,
+                          child: Container(
+                            width: 20,
+                            height: 20,
+                            decoration: BoxDecoration(
+                              color: scheme.primary,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: scheme.surface,
+                                width: 2,
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.check_rounded,
+                              size: 14,
+                              color: scheme.onPrimary,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    option.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.caption(color: labelColor)
+                        .copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

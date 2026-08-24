@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -9,13 +7,21 @@ import 'providers/camera_provider.dart';
 import 'providers/card_view_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/app_lock_provider.dart';
+import 'providers/app_icon_provider.dart';
 import 'providers/profile_provider.dart';
+import 'models/app_icon_option.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/saved_cards_screen.dart';
 import 'theme/app_motion.dart';
 import 'theme/app_theme.dart';
+import 'widgets/app_icon_artwork.dart';
+
+bool _nativeSplashDeferred = false;
 
 void main() {
+  final binding = WidgetsFlutterBinding.ensureInitialized();
+  binding.deferFirstFrame();
+  _nativeSplashDeferred = true;
   runApp(const MyApp());
 }
 
@@ -27,6 +33,7 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => AppIconProvider()),
         ChangeNotifierProvider(create: (_) => AppLockProvider()),
         ChangeNotifierProvider(create: (_) => NfcProvider()),
         ChangeNotifierProvider(create: (_) => CameraProvider()),
@@ -69,27 +76,28 @@ class _AppEntry extends StatefulWidget {
 }
 
 class _AppEntryState extends State<_AppEntry> {
-  bool _splashElapsed = false;
-  Timer? _splashTimer;
-
-  @override
-  void initState() {
-    super.initState();
-    _splashTimer = Timer(const Duration(milliseconds: 1350), () {
-      if (mounted) setState(() => _splashElapsed = true);
-    });
-  }
-
-  @override
-  void dispose() {
-    _splashTimer?.cancel();
-    super.dispose();
-  }
+  bool _showSelectedIconSplash = true;
+  bool _splashExitScheduled = false;
 
   @override
   Widget build(BuildContext context) {
     final profile = context.watch<ProfileProvider>();
-    final ready = _splashElapsed && profile.isInitialized;
+    final theme = context.watch<ThemeProvider>();
+    final appIcon = context.watch<AppIconProvider>();
+    final ready =
+        profile.isInitialized && theme.isInitialized && appIcon.isInitialized;
+    if (ready && !_splashExitScheduled) {
+      _splashExitScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_nativeSplashDeferred) {
+          _nativeSplashDeferred = false;
+          WidgetsBinding.instance.allowFirstFrame();
+        }
+        Future<void>.delayed(const Duration(milliseconds: 420), () {
+          if (mounted) setState(() => _showSelectedIconSplash = false);
+        });
+      });
+    }
 
     return AnimatedSwitcher(
       duration: AppMotion.resolve(context, AppMotion.emphasized),
@@ -103,13 +111,42 @@ class _AppEntryState extends State<_AppEntry> {
         ),
       ),
       child: !ready
-          ? const CardVaultSplashScreen(key: ValueKey('splash'))
+          ? ColoredBox(
+              key: const ValueKey('initializing'),
+              color: Theme.of(context).colorScheme.surface,
+            )
+          : _showSelectedIconSplash
+          ? _SelectedAppIconSplash(
+              key: const ValueKey('selected-icon-splash'),
+              option: appIcon.selected,
+            )
           : profile.hasCompletedOnboarding
           ? const _AppLockWrapper(
               key: ValueKey('home'),
               child: SavedCardsScreen(),
             )
           : const OnboardingScreen(key: ValueKey('onboarding')),
+    );
+  }
+}
+
+class _SelectedAppIconSplash extends StatelessWidget {
+  const _SelectedAppIconSplash({super.key, required this.option});
+
+  final AppIconOption option;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Theme.of(context).colorScheme.surface,
+      child: Center(
+        child: AppIconArtwork(
+          option: option,
+          size: 168,
+          borderRadius: 42,
+          addSurfaceShadow: true,
+        ),
+      ),
     );
   }
 }

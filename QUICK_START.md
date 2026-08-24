@@ -189,10 +189,9 @@ bool isValid() {
    import 'package:flutter_secure_storage/flutter_secure_storage';
    ```
 
-2. **Implement OCR**: Add camera-based card scanning for iOS
-   ```dart
-   import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-   ```
+2. **Card OCR**: Android scanning uses the native Tesseract4Android bridge in
+   `android/app/src/main/kotlin/com/cardswallet/cards_wallet/ocr/`. iOS OCR is
+   intentionally deferred.
 
 3. **Add Database**: Store multiple cards
    ```dart
@@ -237,4 +236,3 @@ Having issues? Check:
 **Happy Coding! 🎉**
 
 Remember: This is for development/educational purposes. Implement proper security measures for production use.
-

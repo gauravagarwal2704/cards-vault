@@ -550,7 +550,7 @@ class _AiScanSettingsScreenState extends State<AiScanSettingsScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Offline recognition runs first. If it is incomplete, CardVault asks before sending one metadata-free card crop to the selected provider.',
+                        'Offline recognition runs first. If it is incomplete, CardVault asks before sending up to three metadata-free card frames to the selected provider.',
                         style: AppTypography.body(color: secondary),
                       ),
                     ],

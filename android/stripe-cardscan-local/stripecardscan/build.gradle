@@ -1,0 +1,45 @@
+plugins {
+    id "com.android.library"
+    id "org.jetbrains.kotlin.android"
+    id "kotlin-parcelize"
+}
+
+android {
+    namespace = "com.stripe.android.stripecardscan"
+    compileSdk = 36
+
+    defaultConfig {
+        minSdk = 26
+    }
+
+    buildFeatures {
+        viewBinding = true
+    }
+
+    sourceSets {
+        main.java.exclude(
+            "com/stripe/android/stripecardscan/di/**",
+            "com/stripe/android/stripecardscan/cardscan/CardScanEventsReporter.kt",
+            "com/stripe/android/stripecardscan/cardscan/DefaultCardScanEventsReporter.kt",
+            "com/stripe/android/stripecardscan/cardscan/CardScanFragment.kt",
+            "com/stripe/android/stripecardscan/cardscan/CardScanSheet.kt",
+            "com/stripe/android/stripecardscan/scanui/ScanFragment.kt"
+        )
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation project(":stripe-cardscan-camera-core")
+    implementation project(":stripe-cardscan-ml-core-cardscan")
+    implementation "androidx.annotation:annotation:1.9.1"
+    implementation "androidx.appcompat:appcompat:1.7.0"
+    implementation "androidx.constraintlayout:constraintlayout:2.2.0"
+    implementation "androidx.core:core-ktx:1.13.1"
+    implementation "androidx.lifecycle:lifecycle-runtime-ktx:2.8.7"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1"
+}

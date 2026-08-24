@@ -11,6 +11,9 @@ import '../models/card_scan_capture.dart';
 import '../services/ai_card_scan_service.dart';
 import '../services/ai_scan_settings_service.dart';
 import '../services/ocr_service.dart';
+import '../services/local_card_scan_service.dart';
+import '../utils/camera_preview_geometry.dart';
+import '../utils/card_network_utils.dart';
 import '../utils/image_utils.dart';
 import '../theme/app_motion.dart';
 import '../theme/app_colors.dart';
@@ -32,20 +35,29 @@ class _CardCameraScreenState extends State<CardCameraScreen>
   bool _isCapturing = false;
   bool _isPickingGallery = false;
   bool _isProcessing = false;
-  bool _isAnalyzingFrame = false;
   bool _isPortraitCard = false;
-  int _captureProgress = 0;
   int _initializationGeneration = 0;
+  int _processingStep = 1;
+  bool _processingUsesAi = false;
+  bool _processingComplete = false;
+  bool _galleryStripeFallback = false;
   String _processingMessage = 'Reading card securely on this device…';
-  DateTime _lastAnalysis = DateTime.fromMillisecondsSinceEpoch(0);
+  List<String> _processingImagePaths = const [];
+  String? _bestProcessingImagePath;
   String? _errorMessage;
+  String? _errorDetails;
   bool _isAiError = false;
+  Offset? _focusIndicatorPosition;
+  bool _focusIndicatorSettled = false;
+  int _focusRequestGeneration = 0;
   final OCRService _ocrService = OCRService();
+  final LocalCardScanService _localCardScanService =
+      const LocalCardScanService();
   final AiScanSettingsService _aiSettingsService = AiScanSettingsService();
   final AiCardScanService _aiScanService = AiCardScanService();
   _LiveScanQuality _liveQuality = const _LiveScanQuality(
-    message: 'Align the front of your card within the frame',
-    isReady: false,
+    message: 'Align the card, tap to focus, then scan',
+    isReady: true,
     tone: _ScanQualityTone.neutral,
   );
 
@@ -53,33 +65,45 @@ class _CardCameraScreenState extends State<CardCameraScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _initializeCamera();
+    if (_usesNativeScannerOnly) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_scanWithLocalCardScan(closeOnCancel: true));
+      });
+    } else {
+      unawaited(_initializeCamera());
+    }
   }
+
+  bool get _usesNativeScannerOnly => Platform.isAndroid;
+
+  bool _isClosing = false;
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _initializationGeneration++;
-    _controller?.dispose();
-    _ocrService.dispose();
+    unawaited(_releaseCamera().whenComplete(_ocrService.dispose));
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // On Android the native CardScan activity owns the only camera session.
+    // Its pause/resume transitions must never start Flutter's camera plugin.
+    if (_usesNativeScannerOnly) return;
+
     // Permission sheets and the gallery can briefly mark the app inactive.
     // Disposing then races the initial camera permission request and caused the
     // first scanner opening to remain on its loading screen.
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
-      _initializationGeneration++;
+      _focusIndicatorPosition = null;
       _isInitializing = false;
-      _controller?.dispose();
-      _controller = null;
-      _isInitialized = false;
+      unawaited(_releaseCamera());
     } else if (state == AppLifecycleState.resumed) {
       final controller = _controller;
-      if (!_isPickingGallery &&
+      if (!_isClosing &&
+          !_isPickingGallery &&
+          !_isCapturing &&
           !_isProcessing &&
           (controller == null || !controller.value.isInitialized)) {
         _initializeCamera();
@@ -87,13 +111,61 @@ class _CardCameraScreenState extends State<CardCameraScreen>
     }
   }
 
+  Future<void> _popScanner([Object? result]) async {
+    if (_isClosing) return;
+    _isClosing = true;
+    try {
+      await _releaseCamera();
+    } finally {
+      if (mounted) Navigator.of(context).pop(result);
+    }
+  }
+
+  Future<void> _releaseCamera() async {
+    _initializationGeneration++;
+    _focusRequestGeneration++;
+    final controller = _controller;
+    _controller = null;
+    _isInitialized = false;
+    if (controller != null) {
+      try {
+        await controller.dispose();
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _stopAndDispose(CameraController? controller) async {
+    if (controller == null) return;
+    try {
+      await controller.dispose();
+    } catch (_) {}
+  }
+
+  Widget _withCloseGuard(Widget child) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        unawaited(_popScanner(result));
+      },
+      child: child,
+    );
+  }
+
   Future<void> _initializeCamera() async {
-    if (_isInitializing || _isPickingGallery || _isProcessing) return;
+    if (_isInitializing ||
+        _isPickingGallery ||
+        _isCapturing ||
+        _isProcessing ||
+        _isClosing) {
+      return;
+    }
     final generation = ++_initializationGeneration;
     if (mounted) {
       setState(() {
         _isInitializing = true;
         _errorMessage = null;
+        _errorDetails = null;
         _isAiError = false;
       });
     }
@@ -118,28 +190,28 @@ class _CardCameraScreenState extends State<CardCameraScreen>
       final previous = _controller;
       final controller = CameraController(
         camera,
-        // ML Kit downsizes long edges to 2000px, so `high` is faster and avoids
-        // the visible shutter pause of an unnecessarily huge capture.
         ResolutionPreset.high,
         enableAudio: false,
-        imageFormatGroup: Platform.isAndroid
-            ? ImageFormatGroup.yuv420
-            : ImageFormatGroup.bgra8888,
       );
       _controller = controller;
-      await previous?.dispose();
+      await _stopAndDispose(previous);
       await controller.initialize().timeout(const Duration(seconds: 12));
-      if (!mounted || generation != _initializationGeneration) {
-        await controller.dispose();
+      if (!mounted || _isClosing || generation != _initializationGeneration) {
+        await _stopAndDispose(controller);
         return;
       }
       await controller.setFlashMode(FlashMode.off);
       try {
         await controller.setFocusMode(FocusMode.auto);
         await controller.setExposureMode(ExposureMode.auto);
+        await _applyCameraFocus(controller, const Offset(0.5, 0.5));
       } catch (_) {
         // Some desktop and older mobile camera implementations do not expose
         // focus/exposure controls.
+      }
+      if (!mounted || _isClosing || generation != _initializationGeneration) {
+        await _stopAndDispose(controller);
+        return;
       }
       if (mounted) {
         setState(() {
@@ -148,33 +220,14 @@ class _CardCameraScreenState extends State<CardCameraScreen>
           _errorMessage = null;
         });
       }
-      // Live quality hints are optional. A slow/unsupported analysis stream
-      // must never block the camera from opening or the shutter from working.
-      unawaited(_startAnalysisStream(controller, generation));
-    } catch (_) {
-      if (mounted) {
+    } catch (error) {
+      if (mounted && !_isClosing && generation == _initializationGeneration) {
         setState(() {
           _isInitializing = false;
           _errorMessage = 'CardVault could not start the camera. Check camera permission and try again.';
+          _errorDetails = null;
         });
       }
-    }
-  }
-
-  Future<void> _startAnalysisStream(
-    CameraController controller,
-    int generation,
-  ) async {
-    try {
-      await controller
-          .startImageStream(_analyzeCameraFrame)
-          .timeout(const Duration(seconds: 2));
-      if (generation != _initializationGeneration &&
-          controller.value.isStreamingImages) {
-        await controller.stopImageStream();
-      }
-    } catch (_) {
-      // Capture remains available without live quality hints.
     }
   }
 
@@ -198,175 +251,233 @@ class _CardCameraScreenState extends State<CardCameraScreen>
     }
   }
 
-  void _analyzeCameraFrame(CameraImage image) {
-    final now = DateTime.now();
-    if (_isAnalyzingFrame ||
-        _isCapturing ||
-        now.difference(_lastAnalysis) < const Duration(milliseconds: 450)) {
-      return;
-    }
-    _isAnalyzingFrame = true;
-    _lastAnalysis = now;
-
+  Future<bool> _applyCameraFocus(
+    CameraController controller,
+    Offset normalizedPoint,
+  ) async {
     try {
-      final quality = _measureLiveQuality(image);
-      if (mounted && quality.message != _liveQuality.message) {
-        setState(() => _liveQuality = quality);
-      }
-    } finally {
-      _isAnalyzingFrame = false;
+      await controller.setFocusMode(FocusMode.auto);
+    } catch (_) {
+      // Setting a point can still trigger autofocus on cameras that do not
+      // expose focus-mode control separately.
     }
+
+    var focusPointApplied = false;
+    try {
+      await controller.setFocusPoint(normalizedPoint);
+      focusPointApplied = true;
+    } catch (_) {
+      // Fixed-focus and older cameras may not expose a focus point.
+    }
+    try {
+      await controller.setExposurePoint(normalizedPoint);
+    } catch (_) {
+      // Exposure metering is useful but not required for tap-to-focus.
+    }
+    return focusPointApplied;
   }
 
-  _LiveScanQuality _measureLiveQuality(CameraImage image) {
-    if (image.planes.isEmpty || image.width < 8 || image.height < 8) {
-      return _liveQuality;
-    }
-
-    final step = max(8, min(image.width, image.height) ~/ 70);
-    var samples = 0;
-    var sum = 0.0;
-    var sumSquares = 0.0;
-    var glare = 0;
-    var edgeSum = 0.0;
-    var edgeSamples = 0;
-
-    for (var y = step; y < image.height - step; y += step) {
-      for (var x = step; x < image.width - step; x += step) {
-        final value = _luminanceAt(image, x, y);
-        final right = _luminanceAt(image, x + step, y);
-        final bottom = _luminanceAt(image, x, y + step);
-        sum += value;
-        sumSquares += value * value;
-        if (value >= 247) glare++;
-        edgeSum += (value - right).abs() + (value - bottom).abs();
-        edgeSamples += 2;
-        samples++;
-      }
-    }
-
-    if (samples == 0) return _liveQuality;
-    final brightness = sum / samples;
-    final contrast = sqrt(
-      max(0, sumSquares / samples - brightness * brightness),
-    );
-    final glareRatio = glare / samples;
-    final edgeStrength = edgeSamples == 0 ? 0 : edgeSum / edgeSamples;
-
-    if (brightness < 48) {
-      return const _LiveScanQuality(
-        message: 'Too dark — add light or turn on flash',
-        isReady: false,
-        tone: _ScanQualityTone.warning,
-      );
-    }
-    if (brightness > 222 || glareRatio > 0.2) {
-      return const _LiveScanQuality(
-        message: 'Glare detected — tilt the card slightly',
-        isReady: false,
-        tone: _ScanQualityTone.warning,
-      );
-    }
-    if (contrast < 18) {
-      return const _LiveScanQuality(
-        message: 'Use a contrasting background',
-        isReady: false,
-        tone: _ScanQualityTone.warning,
-      );
-    }
-    if (edgeStrength < 7) {
-      return const _LiveScanQuality(
-        message: 'Hold steady and let the camera focus',
-        isReady: false,
-        tone: _ScanQualityTone.warning,
-      );
-    }
-    return const _LiveScanQuality(
-      message: 'Ready — hold steady and capture',
-      isReady: true,
-      tone: _ScanQualityTone.ready,
-    );
-  }
-
-  int _luminanceAt(CameraImage image, int x, int y) {
-    final plane = image.planes.first;
-    final rowStride = plane.bytesPerRow;
-    final pixelStride = plane.bytesPerPixel ?? 1;
-    final offset = y * rowStride + x * pixelStride;
-    if (offset < 0 || offset >= plane.bytes.length) return 0;
-
-    if (image.format.group == ImageFormatGroup.bgra8888 &&
-        offset + 2 < plane.bytes.length) {
-      final blue = plane.bytes[offset];
-      final green = plane.bytes[offset + 1];
-      final red = plane.bytes[offset + 2];
-      return (0.299 * red + 0.587 * green + 0.114 * blue).round();
-    }
-    return plane.bytes[offset];
-  }
-
-  Future<void> _captureImages() async {
+  Future<void> _focusAt(Offset viewportPoint, Size viewportSize) async {
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized || _isCapturing) {
+    if (_isCapturing ||
+        controller == null ||
+        !controller.value.isInitialized ||
+        controller.value.previewSize == null) {
       return;
     }
 
+    final preview = controller.value.previewSize!;
+    final normalizedPoint = CameraPreviewGeometry.normalizedPointForCover(
+      viewportPoint: viewportPoint,
+      viewportSize: viewportSize,
+      orientedPreviewSize: Size(preview.height, preview.width),
+    );
+    final request = ++_focusRequestGeneration;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _focusIndicatorPosition = viewportPoint;
+      _focusIndicatorSettled = false;
+    });
+
+    final applied = await _applyCameraFocus(controller, normalizedPoint);
+    if (!mounted || request != _focusRequestGeneration) return;
+    if (!applied) {
+      setState(() {
+        _focusIndicatorPosition = null;
+        _liveQuality = const _LiveScanQuality(
+          message:
+              'This camera uses fixed focus — keep the card near the center',
+          isReady: false,
+          tone: _ScanQualityTone.warning,
+        );
+      });
+      return;
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 550));
+    if (!mounted || request != _focusRequestGeneration) return;
+    setState(() => _focusIndicatorSettled = true);
+    await Future<void>.delayed(const Duration(milliseconds: 650));
+    if (!mounted || request != _focusRequestGeneration) return;
+    setState(() => _focusIndicatorPosition = null);
+  }
+
+  Future<void> _scanWithLocalCardScan({bool closeOnCancel = false}) async {
+    final controller = _controller;
+    if (_isCapturing ||
+        (!_usesNativeScannerOnly &&
+            (controller == null || !controller.value.isInitialized))) {
+      return;
+    }
     HapticFeedback.mediumImpact();
     setState(() {
       _isCapturing = true;
-      _captureProgress = 0;
+      _galleryStripeFallback = false;
+      _focusIndicatorPosition = null;
+      _errorMessage = null;
+      _errorDetails = null;
+      _liveQuality = const _LiveScanQuality(
+        message: 'Opening the live card scanner…',
+        isReady: true,
+        tone: _ScanQualityTone.neutral,
+      );
     });
-    final capturedPaths = <String>[];
+
+    // CameraX must own the camera while Stripe's portable scanner analyzes
+    // preview frames. Releasing Flutter's controller avoids two camera clients
+    // racing each other, a common source of scanner crashes.
+    await _releaseCamera();
+    String? acceptedImagePath;
     try {
-      if (controller.value.isStreamingImages) {
-        await controller.stopImageStream();
-      }
-      try {
-        await controller.setFocusPoint(const Offset(0.5, 0.5));
-        await controller.setExposurePoint(const Offset(0.5, 0.5));
-      } catch (_) {
-        // Optional camera capability.
-      }
+      final scan = await _localCardScanService.scan();
+      acceptedImagePath = scan.imagePath;
+      if (!mounted || _isClosing) return;
 
-      // Nearby frames reduce single-frame OCR errors from reflections and
-      // embossed digits. Three is a useful accuracy/latency balance.
-      for (var index = 0; index < 3; index++) {
-        if (mounted) setState(() => _captureProgress = index + 1);
-        final file = await controller.takePicture();
-        capturedPaths.add(file.path);
-        if (index < 2) {
-          await Future<void>.delayed(const Duration(milliseconds: 110));
+      if (!scan.completed) {
+        setState(() {
+          _isCapturing = false;
+          _liveQuality = _scanCanceledGuidance(scan.cancellationReason);
+        });
+        if (closeOnCancel) {
+          await _popScanner();
+          return;
         }
-      }
-
-      if (!mounted) {
-        await CardScanCapture(
-          imagePaths: capturedPaths,
-          ownsFiles: true,
-        ).deleteOwnedFiles();
+        await _initializeCamera();
         return;
       }
 
-      HapticFeedback.selectionClick();
-      final capture = CardScanCapture(
-        imagePaths: capturedPaths,
-        ownsFiles: true,
-        crop: _normalizedCardCrop(MediaQuery.sizeOf(context)),
-      );
-      await _processCapture(capture, fromGallery: false);
-    } catch (_) {
-      await CardScanCapture(
-        imagePaths: capturedPaths,
-        ownsFiles: true,
-      ).deleteOwnedFiles();
-      if (mounted) {
+      OCRResult localText = const OCRResult();
+      if (acceptedImagePath != null) {
+        if (mounted) {
+          setState(() {
+            _liveQuality = const _LiveScanQuality(
+              message: 'Reading expiry date and cardholder name…',
+              isReady: true,
+              tone: _ScanQualityTone.neutral,
+            );
+          });
+        }
+        localText = await _ocrService
+            .processImage(
+              acceptedImagePath,
+              // Native gallery import now returns a bounded, centered card
+              // crop instead of the original full-resolution photo.
+              imageIsCardCrop: true,
+              preprocess: scan.pan != null,
+              timeBudget: const Duration(milliseconds: 2800),
+            )
+            .timeout(
+              const Duration(seconds: 3),
+              onTimeout: () => const OCRResult(),
+            );
+      }
+      final result = scan.pan == null
+          ? localText
+          : _withVerifiedPan(localText, scan.pan!);
+      if (result.cardNumber == null) {
+        if (mounted && !_isClosing) {
+          setState(() {
+            _isCapturing = false;
+            _errorDetails = null;
+            _errorMessage = 'CardVault could not identify the card number. Try another photo or enter it manually.';
+          });
+        }
+        return;
+      }
+      if (!mounted || _isClosing) return;
+      setState(() {
+        _isCapturing = false;
+        _liveQuality = const _LiveScanQuality(
+          message: 'Card number verified',
+          isReady: true,
+          tone: _ScanQualityTone.ready,
+        );
+      });
+      HapticFeedback.lightImpact();
+      await Future<void>.delayed(const Duration(milliseconds: 220));
+      if (mounted) await _popScanner(result);
+    } on PlatformException {
+      if (mounted && !_isClosing) {
         setState(() {
           _isCapturing = false;
-          _captureProgress = 0;
-          _errorMessage = 'The capture did not complete. Please try again.';
+          _errorMessage = 'The local Android card scanner could not start.';
+          _errorDetails = null;
         });
+        if (!_usesNativeScannerOnly) await _initializeCamera();
+      }
+    } finally {
+      if (acceptedImagePath != null) {
+        await CardScanCapture(
+          imagePaths: [acceptedImagePath],
+          ownsFiles: true,
+        ).deleteOwnedFiles();
       }
     }
+  }
+
+  OCRResult _withVerifiedPan(OCRResult localText, String verifiedPan) {
+    final warnings = <String>{
+      ...localText.reviewWarnings.where((warning) {
+        final normalized = warning.toLowerCase();
+        // These field-specific warnings are rebuilt below after merging the
+        // PAN verified by the live model with the accepted-frame text OCR.
+        return !normalized.contains('card number') &&
+            !normalized.contains('pan') &&
+            !normalized.contains('expiry') &&
+            !normalized.contains('cardholder name');
+      }),
+      if (localText.expiryDate == null) 'Expiry date was not read',
+      if (localText.cardholderName == null) 'Cardholder name was not read',
+    };
+    final textConfidence = [
+      localText.expiryDateConfidence,
+      localText.cardholderNameConfidence,
+    ].where((confidence) => confidence > 0).toList();
+    final averageTextConfidence = textConfidence.isEmpty
+        ? 0.72
+        : textConfidence.reduce((a, b) => a + b) / textConfidence.length;
+    return OCRResult(
+      cardNumber: verifiedPan,
+      expiryDate: localText.expiryDate,
+      cardholderName: localText.cardholderName,
+      cardType: CardNetworkUtils.cardTypeFromNumber(verifiedPan),
+      cardNumberConfidence: 0.99,
+      expiryDateConfidence: localText.expiryDateConfidence,
+      cardholderNameConfidence: localText.cardholderNameConfidence,
+      overallConfidence: (0.99 + averageTextConfidence) / 2,
+      supportingFrames: 3,
+      reviewWarnings: warnings.toList(growable: false),
+    );
+  }
+
+  _LiveScanQuality _scanCanceledGuidance(String? reason) {
+    return _LiveScanQuality(
+      message: reason == 'timeout'
+          ? 'Card not found in 20 seconds — reposition it and try again'
+          : 'Scan canceled — ready to try again',
+      isReady: false,
+      tone: _ScanQualityTone.warning,
+    );
   }
 
   Future<void> _pickFromGallery() async {
@@ -375,13 +486,10 @@ class _CardCameraScreenState extends State<CardCameraScreen>
       _isPickingGallery = true;
       _processingMessage = 'Opening your photo library…';
       _errorMessage = null;
+      _errorDetails = null;
       _isAiError = false;
     });
     try {
-      final controller = _controller;
-      if (controller != null && controller.value.isStreamingImages) {
-        await controller.stopImageStream();
-      }
       final image = await ImagePicker().pickImage(
         source: ImageSource.gallery,
         imageQuality: 95,
@@ -392,8 +500,6 @@ class _CardCameraScreenState extends State<CardCameraScreen>
         final current = _controller;
         if (current == null || !current.value.isInitialized) {
           await _initializeCamera();
-        } else {
-          unawaited(_startAnalysisStream(current, _initializationGeneration));
         }
         return;
       }
@@ -401,11 +507,12 @@ class _CardCameraScreenState extends State<CardCameraScreen>
         CardScanCapture(imagePaths: [image.path], ownsFiles: false),
         fromGallery: true,
       );
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         setState(() {
           _isPickingGallery = false;
           _errorMessage = 'The selected photo could not be opened.';
+          _errorDetails = null;
         });
       }
     }
@@ -420,14 +527,28 @@ class _CardCameraScreenState extends State<CardCameraScreen>
       _isCapturing = false;
       _isPickingGallery = fromGallery;
       _isProcessing = true;
+      _processingStep = _galleryStripeFallback ? 2 : 1;
+      _processingUsesAi = false;
+      _processingComplete = false;
+      _processingImagePaths = List.unmodifiable(capture.imagePaths);
+      _bestProcessingImagePath = null;
       _processingMessage = fromGallery
-          ? 'Reading the selected photo on this device…'
-          : 'Comparing 3 frames on this device…';
+          ? _galleryStripeFallback
+                ? 'Stripe could not verify this photo — trying the offline OCR fallback…'
+                : 'Checking the selected photo…'
+          : 'Checking ${capture.imagePaths.length} captured frames…';
     });
 
     try {
       final ranked = <({String path, ImageQuality quality})>[];
-      for (final path in capture.imagePaths) {
+      for (var index = 0; index < capture.imagePaths.length; index++) {
+        if (mounted) {
+          setState(() {
+            _processingMessage =
+                'Checking frame ${index + 1} of ${capture.imagePaths.length}…';
+          });
+        }
+        final path = capture.imagePaths[index];
         final quality = await ImageUtils.validateImageQuality(
           path,
           crop: capture.crop,
@@ -437,11 +558,21 @@ class _CardCameraScreenState extends State<CardCameraScreen>
       ranked.sort(
         (a, b) => _qualityScore(b.quality).compareTo(_qualityScore(a.quality)),
       );
+      if (mounted && ranked.isNotEmpty) {
+        setState(() {
+          _bestProcessingImagePath = ranked.first.path;
+          _processingStep = 2;
+          _processingMessage = ranked.length == 1
+              ? 'Reading the card offline on this device…'
+              : 'Comparing ${ranked.length} frames offline on this device…';
+        });
+      }
 
       // Quality is advisory. A strict pre-OCR rejection caused valid gallery
       // photos and slightly reflective cards to fail before text recognition.
       final paths = ranked.map((item) => item.path).take(3).toList();
       var result = await _ocrService.processImages(paths, crop: capture.crop);
+      if (mounted) {}
 
       if (result.cardNumber == null || result.expiryDate == null) {
         final settings = await _aiSettingsService.load();
@@ -449,16 +580,27 @@ class _CardCameraScreenState extends State<CardCameraScreen>
           final approved = await _confirmAiUpload(settings);
           if (approved && mounted) {
             setState(() {
+              _processingStep = 3;
+              _processingUsesAi = true;
               _processingMessage =
-                  '${settings.provider.modelLabel} is reading one metadata-free card crop…';
+                  '${settings.provider.modelLabel} is comparing ${paths.length} metadata-free frame${paths.length == 1 ? '' : 's'}…';
             });
             final outcome = await _aiScanService.scan(
-              imagePath: ranked.first.path,
+              imagePaths: paths,
               crop: capture.crop,
               localResult: result,
               settings: settings,
+              onAttempt: (attempt, maxAttempts) {
+                if (!mounted) return;
+                setState(() {
+                  _processingMessage = attempt == 1
+                      ? '${settings.provider.modelLabel} is reading the card…'
+                      : 'Network retry ${attempt - 1} of ${maxAttempts - 1} with ${settings.provider.label}…';
+                });
+              },
             );
             result = outcome.result;
+            if (mounted) {}
           }
         }
       }
@@ -471,6 +613,7 @@ class _CardCameraScreenState extends State<CardCameraScreen>
         setState(() {
           _isProcessing = false;
           _isPickingGallery = false;
+          _errorDetails = null;
           _errorMessage = bestWarning == null
               ? 'CardVault could not identify the card number. Try another photo or enter it manually.'
               : '$bestWarning CardVault still could not identify the card number.';
@@ -478,20 +621,32 @@ class _CardCameraScreenState extends State<CardCameraScreen>
         return;
       }
 
-      setState(() => _processingMessage = 'Card found — opening review…');
+      setState(() {
+        _processingStep = 3;
+        _processingComplete = true;
+        _processingMessage = 'Card found — opening review…';
+      });
       HapticFeedback.lightImpact();
       await Future<void>.delayed(const Duration(milliseconds: 320));
-      if (mounted) Navigator.pop(context, result);
+      if (mounted) await _popScanner(result);
     } on AiCardScanException catch (error) {
       if (mounted) {
         setState(() {
           _isProcessing = false;
           _isPickingGallery = false;
           _isAiError = true;
-          _errorMessage = error.message;
+          _errorMessage = error.userMessage;
+          _errorDetails = [
+            if (error.diagnostics != null)
+              'Provider: ${error.diagnostics!.provider.label}',
+            if (error.diagnostics?.httpStatus != null)
+              'HTTP status: ${error.diagnostics!.httpStatus}',
+            'Attempts: ${error.attempts}',
+            'A redacted diagnostic entry was saved in Smart Scan logs.',
+          ].join('\n');
         });
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         setState(() {
           _isProcessing = false;
@@ -499,6 +654,7 @@ class _CardCameraScreenState extends State<CardCameraScreen>
           _isAiError = false;
           _errorMessage =
               'The card image could not be processed. Try another photo.';
+          _errorDetails = 'Processing error: ${error.runtimeType}';
         });
       }
     } finally {
@@ -526,7 +682,7 @@ class _CardCameraScreenState extends State<CardCameraScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'The offline scan could not confidently read every required field. Send one image directly to ${settings.provider.label} for processing by ${settings.provider.modelLabel}?',
+                'The offline scan could not confidently read every required field. Send up to 3 nearby frames directly to ${settings.provider.label} for processing by ${settings.provider.modelLabel}?',
               ),
               const SizedBox(height: 14),
               const Text(
@@ -535,7 +691,7 @@ class _CardCameraScreenState extends State<CardCameraScreen>
               ),
               const SizedBox(height: 6),
               const Text(
-                '• One cropped, resized JPEG with metadata removed\n'
+                '• Up to 3 cropped, resized JPEG frames with metadata removed\n'
                 '• A request for card number, expiry, cardholder name, and confidence\n'
                 '• Instructions to return null when uncertain and never extract CVV\n'
                 '• Your saved key as an HTTPS authentication header to the selected provider',
@@ -554,34 +710,12 @@ class _CardCameraScreenState extends State<CardCameraScreen>
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Send one image'),
+            child: const Text('Send frames'),
           ),
         ],
       ),
     );
     return approved ?? false;
-  }
-
-  NormalizedCardCrop _normalizedCardCrop(Size screenSize) {
-    final preview = _controller!.value.previewSize!;
-    final sourceWidth = preview.height;
-    final sourceHeight = preview.width;
-    final scale = max(
-      screenSize.width / sourceWidth,
-      screenSize.height / sourceHeight,
-    );
-    final displayedWidth = sourceWidth * scale;
-    final displayedHeight = sourceHeight * scale;
-    final offsetX = (screenSize.width - displayedWidth) / 2;
-    final offsetY = (screenSize.height - displayedHeight) / 2;
-    final frame = _cardFrame(screenSize);
-
-    return NormalizedCardCrop(
-      left: ((frame.left - offsetX) / displayedWidth).clamp(0, 1),
-      top: ((frame.top - offsetY) / displayedHeight).clamp(0, 1),
-      width: (frame.width / displayedWidth).clamp(0, 1),
-      height: (frame.height / displayedHeight).clamp(0, 1),
-    );
   }
 
   Widget _cameraPreview() {
@@ -623,6 +757,10 @@ class _CardCameraScreenState extends State<CardCameraScreen>
 
   @override
   Widget build(BuildContext context) {
+    return _withCloseGuard(_buildScanner(context));
+  }
+
+  Widget _buildScanner(BuildContext context) {
     if (_errorMessage != null) {
       return Scaffold(
         backgroundColor: Colors.black,
@@ -644,28 +782,49 @@ class _CardCameraScreenState extends State<CardCameraScreen>
                     style: const TextStyle(color: Colors.white, fontSize: 16),
                     textAlign: TextAlign.center,
                   ),
+                  if (_errorDetails != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: SelectableText(
+                        _errorDetails!,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                        textAlign: TextAlign.left,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 24),
                   FilledButton(
                     onPressed: () async {
                       setState(() {
                         _errorMessage = null;
+                        _errorDetails = null;
                         _isAiError = false;
                         _isCapturing = false;
                         _isPickingGallery = false;
                         _isProcessing = false;
-                        _captureProgress = 0;
+                        _processingImagePaths = const [];
+                        _bestProcessingImagePath = null;
+                        _processingUsesAi = false;
+                        _processingComplete = false;
+                        _galleryStripeFallback = false;
                       });
+                      if (_usesNativeScannerOnly) {
+                        await _scanWithLocalCardScan(closeOnCancel: true);
+                        return;
+                      }
                       final controller = _controller;
                       if (controller == null ||
                           !controller.value.isInitialized) {
                         await _initializeCamera();
-                      } else if (!controller.value.isStreamingImages) {
-                        unawaited(
-                          _startAnalysisStream(
-                            controller,
-                            _initializationGeneration,
-                          ),
-                        );
                       }
                     },
                     child: const Text('Try again'),
@@ -683,13 +842,14 @@ class _CardCameraScreenState extends State<CardCameraScreen>
                       icon: const Icon(Icons.settings_outlined),
                       label: const Text('Open Smart Scan settings'),
                     ),
-                  TextButton.icon(
-                    onPressed: _pickFromGallery,
-                    icon: const Icon(Icons.photo_library_outlined),
-                    label: const Text('Choose another photo'),
-                  ),
+                  if (!_usesNativeScannerOnly)
+                    TextButton.icon(
+                      onPressed: _pickFromGallery,
+                      icon: const Icon(Icons.photo_library_outlined),
+                      label: const Text('Choose another photo'),
+                    ),
                   TextButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () => unawaited(_popScanner()),
                     child: const Text('Cancel'),
                   ),
                 ],
@@ -704,6 +864,45 @@ class _CardCameraScreenState extends State<CardCameraScreen>
       return _processingScaffold();
     }
 
+    if (_usesNativeScannerOnly) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: SafeArea(
+          child: Stack(
+            children: [
+              Align(
+                alignment: Alignment.topLeft,
+                child: IconButton(
+                  onPressed: () => unawaited(_popScanner()),
+                  icon: const Icon(Icons.close, color: Colors.white),
+                ),
+              ),
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(color: Colors.white),
+                      const SizedBox(height: 18),
+                      Text(
+                        _liveQuality.message,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (!_isInitialized || _controller == null) {
       return Scaffold(
         backgroundColor: Colors.black,
@@ -713,7 +912,7 @@ class _CardCameraScreenState extends State<CardCameraScreen>
               Align(
                 alignment: Alignment.topLeft,
                 child: IconButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => unawaited(_popScanner()),
                   icon: const Icon(Icons.close, color: Colors.white),
                 ),
               ),
@@ -756,6 +955,27 @@ class _CardCameraScreenState extends State<CardCameraScreen>
               frameColor: qualityColor,
             ),
           ),
+          Positioned.fill(
+            child: Semantics(
+              label: 'Camera preview. Tap the card to focus.',
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapDown: _isCapturing
+                    ? null
+                    : (details) =>
+                          unawaited(_focusAt(details.localPosition, size)),
+                child: const SizedBox.expand(),
+              ),
+            ),
+          ),
+          if (_focusIndicatorPosition != null)
+            Positioned(
+              left: _focusIndicatorPosition!.dx - 32,
+              top: _focusIndicatorPosition!.dy - 32,
+              child: IgnorePointer(
+                child: _CameraFocusReticle(settled: _focusIndicatorSettled),
+              ),
+            ),
           SafeArea(
             child: Column(
               children: [
@@ -767,7 +987,7 @@ class _CardCameraScreenState extends State<CardCameraScreen>
                       IconButton(
                         onPressed: _isCapturing
                             ? null
-                            : () => Navigator.pop(context),
+                            : () => unawaited(_popScanner()),
                         icon: const Icon(
                           Icons.close,
                           color: Colors.white,
@@ -861,7 +1081,7 @@ class _CardCameraScreenState extends State<CardCameraScreen>
                       ),
                       const SizedBox(height: 5),
                       const Text(
-                        'One tap captures 3 quick frames — keep still until ✓',
+                        'Live preview frames are checked in memory; only the verified crop is used for local text reading',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: Colors.white70, fontSize: 11),
                       ),
@@ -885,9 +1105,11 @@ class _CardCameraScreenState extends State<CardCameraScreen>
                       const SizedBox(width: 34),
                       _RoundCameraButton(
                         semanticLabel: _isCapturing
-                            ? 'Capturing card'
-                            : 'Capture card',
-                        onTap: _isCapturing ? null : _captureImages,
+                            ? 'Scanning card'
+                            : 'Start scanning card',
+                        onTap: _isCapturing
+                            ? null
+                            : () => _scanWithLocalCardScan(),
                         size: 78,
                         background: Colors.white,
                         child: _isCapturing
@@ -914,9 +1136,9 @@ class _CardCameraScreenState extends State<CardCameraScreen>
                             ? null
                             : () {
                                 HapticFeedback.selectionClick();
-                                setState(
-                                  () => _isPortraitCard = !_isPortraitCard,
-                                );
+                                setState(() {
+                                  _isPortraitCard = !_isPortraitCard;
+                                });
                               },
                         size: 54,
                         child: Tooltip(
@@ -948,13 +1170,13 @@ class _CardCameraScreenState extends State<CardCameraScreen>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(
-                          Icons.pan_tool_alt_outlined,
+                          Icons.document_scanner_outlined,
                           color: Colors.white,
                           size: 42,
                         ),
                         const SizedBox(height: 18),
                         Text(
-                          'Keep still — frame $_captureProgress of 3',
+                          'Opening live scanner',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 20,
@@ -962,19 +1184,21 @@ class _CardCameraScreenState extends State<CardCameraScreen>
                           ),
                         ),
                         const SizedBox(height: 10),
-                        const Text(
-                          'CardVault compares the frames to reduce glare and OCR mistakes.',
+                        Text(
+                          _liveQuality.message,
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.white70, fontSize: 14),
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                          ),
                         ),
                         const SizedBox(height: 22),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(99),
-                          child: LinearProgressIndicator(
-                            value: _captureProgress / 3,
+                          child: const LinearProgressIndicator(
                             minHeight: 7,
                             backgroundColor: Colors.white24,
-                            color: const Color(0xFF55E59A),
+                            color: Color(0xFF55E59A),
                           ),
                         ),
                       ],
@@ -999,7 +1223,7 @@ class _CardCameraScreenState extends State<CardCameraScreen>
               Align(
                 alignment: Alignment.topLeft,
                 child: IconButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => unawaited(_popScanner()),
                   icon: const Icon(Icons.close, color: Colors.white),
                 ),
               ),
@@ -1009,6 +1233,10 @@ class _CardCameraScreenState extends State<CardCameraScreen>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (_processingImagePaths.isNotEmpty) ...[
+                      _buildProcessingFrames(),
+                      const SizedBox(height: 24),
+                    ],
                     Container(
                       width: 74,
                       height: 74,
@@ -1039,10 +1267,13 @@ class _CardCameraScreenState extends State<CardCameraScreen>
                       ),
                     ),
                     const SizedBox(height: 18),
-                    const LinearProgressIndicator(
+                    LinearProgressIndicator(
+                      value: _processingStep / 3,
                       backgroundColor: Colors.white12,
                       color: Color(0xFF55E59A),
                     ),
+                    const SizedBox(height: 12),
+                    _buildProcessingStages(),
                     const SizedBox(height: 16),
                     const Text(
                       'Offline is always tried first. Photos are discarded after processing.',
@@ -1056,6 +1287,121 @@ class _CardCameraScreenState extends State<CardCameraScreen>
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildProcessingFrames() {
+    return SizedBox(
+      height: 92,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          for (var index = 0; index < _processingImagePaths.length; index++)
+            Padding(
+              padding: EdgeInsets.only(
+                right: index == _processingImagePaths.length - 1 ? 0 : 8,
+              ),
+              child: AnimatedContainer(
+                duration: AppMotion.resolve(context, AppMotion.quick),
+                width: 76,
+                height: 92,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color:
+                        _processingImagePaths[index] == _bestProcessingImagePath
+                        ? const Color(0xFF55E59A)
+                        : Colors.white24,
+                    width: 2,
+                  ),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.file(
+                      File(_processingImagePaths[index]),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const ColoredBox(
+                        color: Colors.white10,
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.white54,
+                        ),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.bottomCenter,
+                      child: ColoredBox(
+                        color: Colors.black.withValues(alpha: 0.72),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 3),
+                            child: Text(
+                              'Frame ${index + 1}',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProcessingStages() {
+    final labels = [
+      _galleryStripeFallback ? 'Stripe scan' : 'Quality',
+      _galleryStripeFallback ? 'Offline fallback' : 'Offline OCR',
+      _processingUsesAi ? 'Smart AI' : 'Review',
+    ];
+    return Row(
+      children: [
+        for (var index = 0; index < labels.length; index++) ...[
+          Expanded(
+            child: Column(
+              children: [
+                Icon(
+                  index + 1 < _processingStep ||
+                          (_processingComplete && index + 1 == _processingStep)
+                      ? Icons.check_circle
+                      : index + 1 == _processingStep
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  size: 17,
+                  color: index + 1 <= _processingStep
+                      ? const Color(0xFF55E59A)
+                      : Colors.white30,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  labels[index],
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: index + 1 <= _processingStep
+                        ? Colors.white70
+                        : Colors.white30,
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (index < labels.length - 1)
+            Container(width: 16, height: 1, color: Colors.white24),
+        ],
+      ],
     );
   }
 }
@@ -1073,6 +1419,41 @@ class _LiveScanQuality {
 }
 
 enum _ScanQualityTone { neutral, warning, ready }
+
+class _CameraFocusReticle extends StatelessWidget {
+  final bool settled;
+
+  const _CameraFocusReticle({required this.settled});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: AnimatedContainer(
+        duration: AppMotion.resolve(context, AppMotion.quick),
+        curve: AppMotion.standardCurve,
+        width: settled ? 46 : 64,
+        height: settled ? 46 : 64,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: settled ? const Color(0xFF55E59A) : Colors.white,
+            width: 2,
+          ),
+        ),
+        child: Center(
+          child: Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(
+              color: settled ? const Color(0xFF55E59A) : Colors.white,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _RoundCameraButton extends StatelessWidget {
   final VoidCallback? onTap;

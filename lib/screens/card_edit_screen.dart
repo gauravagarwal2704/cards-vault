@@ -22,20 +22,29 @@ import '../widgets/card_background_surface.dart';
 import '../widgets/card_network_logo.dart';
 import '../widgets/group_picker_sheet.dart';
 import '../widgets/wallet_card.dart';
+import '../widgets/wallet_card_face.dart';
 import '../utils/card_formatter.dart';
 import '../utils/card_contrast.dart';
 import '../utils/card_network_utils.dart';
 import '../providers/theme_provider.dart';
+import '../theme/app_motion.dart';
 import '../theme/app_typography.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/app_design_system.dart';
 
+enum CardEditInitialSection { cardDetails, additionalInformation }
+
 class CardEditScreen extends StatefulWidget {
   final CardData? card;
   final OCRResult? ocrResult;
+  final CardEditInitialSection initialSection;
 
-  const CardEditScreen({super.key, this.card, this.ocrResult})
-    : assert(card != null || ocrResult != null);
+  const CardEditScreen({
+    super.key,
+    this.card,
+    this.ocrResult,
+    this.initialSection = CardEditInitialSection.cardDetails,
+  }) : assert(card != null || ocrResult != null);
 
   @override
   State<CardEditScreen> createState() => _CardEditScreenState();
@@ -43,6 +52,7 @@ class CardEditScreen extends StatefulWidget {
 
 class _CardEditScreenState extends State<CardEditScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _additionalInformationSectionKey = GlobalKey();
   final _cardStorage = SecureCardStorage();
   final _encryptionService = EncryptionService();
   final _attachmentStorage = CardAttachmentStorage();
@@ -75,6 +85,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
   String? _detectedCardType;
   bool _isLoading = false;
   bool _isInitialized = false;
+  bool _didApplyInitialSection = false;
   Set<String> _existingCardholderNames = {};
   CardNetwork _detectedNetwork = CardNetwork.unknown;
 
@@ -184,6 +195,28 @@ class _CardEditScreenState extends State<CardEditScreen> {
     }
 
     _cardNumberController.addListener(_updateCardType);
+    _scheduleInitialSectionScroll();
+  }
+
+  void _scheduleInitialSectionScroll() {
+    if (_didApplyInitialSection ||
+        widget.initialSection != CardEditInitialSection.additionalInformation) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _didApplyInitialSection) return;
+      final targetContext = _additionalInformationSectionKey.currentContext;
+      if (targetContext == null) return;
+
+      _didApplyInitialSection = true;
+      Scrollable.ensureVisible(
+        targetContext,
+        alignment: 0.08,
+        duration: AppMotion.resolve(context, AppMotion.standard),
+        curve: AppMotion.standardCurve,
+      );
+    });
   }
 
   @override
@@ -559,7 +592,10 @@ class _CardEditScreenState extends State<CardEditScreen> {
         const SizedBox(height: AppSpacing.sm),
         _buildCardBackgroundPicker(),
         const SizedBox(height: AppSpacing.xl),
-        _buildSectionTitle('Additional Information'),
+        _buildSectionTitle(
+          'Additional Information',
+          key: _additionalInformationSectionKey,
+        ),
         const SizedBox(height: AppSpacing.sm),
         _buildAdditionalInfoFields(),
         const SizedBox(height: AppSpacing.xxl),
@@ -571,19 +607,24 @@ class _CardEditScreenState extends State<CardEditScreen> {
     final result = widget.ocrResult!;
     final isConfident = !result.needsReview;
     final confidence = (result.overallConfidence * 100).round();
-    return AppStatusMessage(
-      kind: isConfident ? AppStatusKind.success : AppStatusKind.warning,
-      icon: isConfident
-          ? Icons.verified_user_outlined
-          : Icons.rate_review_outlined,
-      title: isConfident
-          ? 'High-confidence on-device scan'
-          : 'Review the highlighted scan results',
-      message:
-          '$confidence% confidence'
-          '${result.supportingFrames > 1 ? ' · agreed across ${result.supportingFrames} frames' : ''}'
-          '${result.reviewWarnings.isEmpty ? '' : '\n${result.reviewWarnings.map((warning) => '• $warning').join('\n')}'}'
-          '\nProcessed on this device. The captured photo was discarded.',
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppStatusMessage(
+          kind: isConfident ? AppStatusKind.success : AppStatusKind.warning,
+          icon: isConfident
+              ? Icons.verified_user_outlined
+              : Icons.rate_review_outlined,
+          title: isConfident
+              ? 'High-confidence on-device scan'
+              : 'Review the highlighted scan results',
+          message:
+              '$confidence% confidence'
+              '${result.supportingFrames > 1 ? ' · agreed across ${result.supportingFrames} frames' : ''}'
+              '${result.reviewWarnings.isEmpty ? '' : '\n${result.reviewWarnings.map((warning) => '• $warning').join('\n')}'}'
+              '\nProcessed on this device. Source photos were discarded.',
+        ),
+      ],
     );
   }
 
@@ -607,8 +648,10 @@ class _CardEditScreenState extends State<CardEditScreen> {
       ]),
       CardBackgroundMode.customImage => CardContrast.ivory,
     };
-    final secondaryForeground = CardContrast.secondary(foregroundColor);
-    final tertiaryForeground = CardContrast.tertiary(foregroundColor);
+    final faceBackgroundColor =
+        _backgroundMode == CardBackgroundMode.customGradient
+        ? _customGradientStart
+        : primaryColor;
 
     return CardBackgroundPreviewSwiper(
       enabled: _backgroundMode == CardBackgroundMode.catalog,
@@ -638,100 +681,24 @@ class _CardEditScreenState extends State<CardEditScreen> {
           fallbackPrimaryColor: primaryColor,
           fallbackSecondaryColor: secondaryColor,
           borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              _cardCategory == CardCategory.credit
-                                  ? 'Credit'
-                                  : 'Debit',
-                              style: AppTypography.cardName(
-                                color: foregroundColor,
-                              ),
-                            ),
-                            Text(
-                              'Card',
-                              style: AppTypography.cardNameLight(
-                                color: secondaryForeground,
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (_nicknameController.text.isNotEmpty)
-                          Text(
-                            _nicknameController.text,
-                            style: AppTypography.caption(
-                              fontSize: 11,
-                              color: tertiaryForeground,
-                            ),
-                          ),
-                      ],
-                    ),
-                    Icon(
-                      Icons.contactless,
-                      color: secondaryForeground,
-                      size: 24,
-                    ),
-                  ],
-                ),
-                const Spacer(),
-                Text(
-                  _cardNumberController.text.isEmpty
-                      ? '**** **** **** ****'
-                      : _cardNumberController.text,
-                  style: AppTypography.mono(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: foregroundColor,
-                    letterSpacing: 2,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _cardholderController.text.isEmpty
-                            ? 'YOUR NAME'
-                            : _cardholderController.text.toUpperCase(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.caption(color: secondaryForeground)
-                            .copyWith(fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Text(
-                      _expiryController.text.isEmpty
-                          ? 'MM/YY'
-                          : _expiryController.text,
-                      style: AppTypography.mono(
-                        fontSize: 12,
-                        color: secondaryForeground,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    CardNetworkLogo(
-                      cardNumber: _cardNumberController.text,
-                      forceNetwork: _detectedNetwork,
-                      height: 26,
-                      maxWidth: 72,
-                      backgroundColor: primaryColor,
-                    ),
-                  ],
-                ),
-              ],
-            ),
+          child: WalletCardFace(
+            bank: _selectedBank,
+            network: _detectedNetwork,
+            categoryName: _cardCategory == CardCategory.credit
+                ? 'Credit'
+                : 'Debit',
+            nickname: _nicknameController.text,
+            cardNumber: _cardNumberController.text.isEmpty
+                ? CardData.hiddenCardNumber
+                : _cardNumberController.text,
+            cardholderName: _cardholderController.text.isEmpty
+                ? 'YOUR NAME'
+                : _cardholderController.text,
+            expiryDate: _expiryController.text.isEmpty
+                ? 'MM/YY'
+                : _expiryController.text,
+            backgroundColor: faceBackgroundColor,
+            foregroundColor: foregroundColor,
           ),
         ),
       ),
@@ -750,10 +717,11 @@ class _CardEditScreenState extends State<CardEditScreen> {
     });
   }
 
-  Widget _buildSectionTitle(String title) {
+  Widget _buildSectionTitle(String title, {Key? key}) {
     final themeProvider = context.watch<ThemeProvider>();
     return Text(
       title,
+      key: key,
       style: AppTypography.title(color: themeProvider.getPrimaryTextColor()),
     );
   }
@@ -775,19 +743,12 @@ class _CardEditScreenState extends State<CardEditScreen> {
           ),
         ),
       ),
-      style: AppTypography.mono(
-        fontSize: 16,
-        letterSpacing: 1,
-        color: themeProvider.getPrimaryTextColor(),
-      ),
+      style: AppTypography.bodyLarge(color: themeProvider.getPrimaryTextColor())
+          .copyWith(letterSpacing: 0.8),
       onChanged: (value) {
         final cleaned = value.replaceAll(' ', '');
         final newNetwork = CardNetworkUtils.detectNetwork(cleaned);
-        if (newNetwork != _detectedNetwork) {
-          setState(() {
-            _detectedNetwork = newNetwork;
-          });
-        }
+        setState(() => _detectedNetwork = newNetwork);
       },
       validator: (value) {
         if (value == null || value.isEmpty) return 'Required';
@@ -811,8 +772,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
         ExpiryDateFormatter(),
       ],
       decoration: _inputDecoration('MM/YY', Icons.calendar_today),
-      style: AppTypography.mono(
-        fontSize: 16,
+      style: AppTypography.bodyLarge(
         color: themeProvider.getPrimaryTextColor(),
       ),
       onChanged: (value) {
@@ -841,8 +801,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
         CvvFormatter(network: _detectedNetwork),
       ],
       decoration: _inputDecoration(cvvLabel, Icons.lock_outline),
-      style: AppTypography.mono(
-        fontSize: 16,
+      style: AppTypography.bodyLarge(
         color: themeProvider.getPrimaryTextColor(),
       ),
       validator: (value) {
@@ -1041,10 +1000,25 @@ class _CardEditScreenState extends State<CardEditScreen> {
 
   Widget _buildBankChip(BankInfo bank) {
     final isSelected = _selectedBank?.id == bank.id;
+    final scheme = Theme.of(context).colorScheme;
+    final selectedBackground = Color.alphaBlend(
+      bank.primaryColor.withValues(
+        alpha: scheme.brightness == Brightness.dark ? 0.28 : 0.14,
+      ),
+      scheme.surfaceContainerHighest,
+    );
+
     return ChoiceChip(
       selected: isSelected,
       avatar: BankLogo(bank: bank, size: 18, useSmall: true),
       label: Text(bank.shortName),
+      backgroundColor: scheme.surfaceContainerHighest,
+      selectedColor: selectedBackground,
+      showCheckmark: false,
+      side: BorderSide(
+        color: isSelected ? bank.primaryColor : scheme.outlineVariant,
+        width: isSelected ? 1.5 : 1,
+      ),
       onSelected: (_) => setState(() => _selectedBank = bank),
     );
   }

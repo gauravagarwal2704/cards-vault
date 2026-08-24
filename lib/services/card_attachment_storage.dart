@@ -52,8 +52,7 @@ class CardAttachmentStorage {
     try {
       final file = File('${(await _cardDir(cardId)).path}/$attachmentId.enc');
       if (!await file.exists()) return null;
-      final decrypted = await _encryption.decrypt(await file.readAsString());
-      return base64Decode(decrypted);
+      return await _encryption.decryptBase64Bytes(await file.readAsString());
     } catch (_) {
       return null;
     }

@@ -35,7 +35,7 @@ class CardDesign {
   /// because Flutter intentionally ignores several of Figma's SVG filters.
   String get sourceSvgPath => assetPath
       .replaceFirst('assets/', 'design_sources/')
-      .replaceFirst('.png', '.svg');
+      .replaceFirst('.webp', '.svg');
 
   const CardDesign({
     required this.id,
@@ -71,7 +71,7 @@ class CardDesigns {
           id: '${idPrefix}_$number',
           name: '$frameName/$number',
           style: style,
-          assetPath: 'assets/card_backgrounds/$assetDirectory/$number.png',
+          assetPath: 'assets/card_backgrounds/$assetDirectory/$number.webp',
           primaryColor: primaryColor,
           secondaryColor: secondaryColor,
           foregroundColor: charcoalForeground.contains(index + 1)
@@ -151,7 +151,7 @@ class CardDesigns {
       id: 'glassmorphism_01',
       name: 'Glassmorphism/01',
       style: CardDesignStyle.glassmorphism,
-      assetPath: 'assets/card_backgrounds/glassmorphism/01.png',
+      assetPath: 'assets/card_backgrounds/glassmorphism/01.webp',
       primaryColor: Color(0xFF4B4D52),
       secondaryColor: Color(0xFF1B1D21),
       foregroundColor: CardContrast.ivory,
@@ -161,7 +161,7 @@ class CardDesigns {
       id: 'glassmorphism_02',
       name: 'Glassmorphism/02',
       style: CardDesignStyle.glassmorphism,
-      assetPath: 'assets/card_backgrounds/glassmorphism/02.png',
+      assetPath: 'assets/card_backgrounds/glassmorphism/02.webp',
       primaryColor: Color(0xFF24262B),
       secondaryColor: Color(0xFF0F1013),
       foregroundColor: CardContrast.ivory,
@@ -173,7 +173,7 @@ class CardDesigns {
       id: 'monochrome_01',
       name: 'Monochrome/01',
       style: CardDesignStyle.monochrome,
-      assetPath: 'assets/card_backgrounds/monochrome/01.png',
+      assetPath: 'assets/card_backgrounds/monochrome/01.webp',
       primaryColor: Colors.white,
       secondaryColor: Color(0xFFF2F2F2),
       foregroundColor: CardContrast.charcoal,
@@ -182,7 +182,7 @@ class CardDesigns {
       id: 'monochrome_02',
       name: 'Monochrome/02',
       style: CardDesignStyle.monochrome,
-      assetPath: 'assets/card_backgrounds/monochrome/02.png',
+      assetPath: 'assets/card_backgrounds/monochrome/02.webp',
       primaryColor: Colors.black,
       secondaryColor: Color(0xFF111111),
     ),

@@ -20,6 +20,7 @@ import '../widgets/card_background_surface.dart';
 import '../widgets/group_picker_sheet.dart';
 import '../widgets/card_network_logo.dart';
 import '../widgets/wallet_card.dart';
+import '../widgets/wallet_card_face.dart';
 import '../utils/card_formatter.dart';
 import '../utils/card_contrast.dart';
 import '../utils/card_network_utils.dart';
@@ -374,8 +375,10 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
       ]),
       CardBackgroundMode.customImage => CardContrast.ivory,
     };
-    final secondaryForeground = CardContrast.secondary(foregroundColor);
-    final tertiaryForeground = CardContrast.tertiary(foregroundColor);
+    final faceBackgroundColor =
+        _backgroundMode == CardBackgroundMode.customGradient
+        ? _customGradientStart
+        : primaryColor;
 
     return CardBackgroundPreviewSwiper(
       enabled: _backgroundMode == CardBackgroundMode.catalog,
@@ -405,88 +408,24 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
           fallbackPrimaryColor: primaryColor,
           fallbackSecondaryColor: secondaryColor,
           borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              _cardCategory == CardCategory.credit
-                                  ? 'Credit'
-                                  : 'Debit',
-                              style: AppTypography.cardName(
-                                color: foregroundColor,
-                              ),
-                            ),
-                            Text(
-                              'Card',
-                              style: AppTypography.cardNameLight(
-                                color: secondaryForeground,
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (_nicknameController.text.isNotEmpty)
-                          Text(
-                            _nicknameController.text,
-                            style: AppTypography.caption(
-                              fontSize: 11,
-                              color: tertiaryForeground,
-                            ),
-                          ),
-                      ],
-                    ),
-                    Icon(
-                      Icons.contactless,
-                      color: secondaryForeground,
-                      size: 24,
-                    ),
-                  ],
-                ),
-                const Spacer(),
-                Text(
-                  _cardNumberController.text.isEmpty
-                      ? '**** **** **** ****'
-                      : _formatCardNumber(_cardNumberController.text),
-                  style: AppTypography.mono(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: foregroundColor,
-                    letterSpacing: 2,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Text(
-                      _cardholderController.text.isEmpty
-                          ? 'YOUR NAME'
-                          : _cardholderController.text.toUpperCase(),
-                      style: AppTypography.caption(color: secondaryForeground)
-                          .copyWith(fontWeight: FontWeight.w500),
-                    ),
-                    const Spacer(),
-                    Text(
-                      _expiryController.text.isEmpty
-                          ? 'MM/YY'
-                          : _expiryController.text,
-                      style: AppTypography.mono(
-                        fontSize: 12,
-                        color: secondaryForeground,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+          child: WalletCardFace(
+            bank: _selectedBank,
+            network: _detectedNetwork,
+            categoryName: _cardCategory == CardCategory.credit
+                ? 'Credit'
+                : 'Debit',
+            nickname: _nicknameController.text,
+            cardNumber: _cardNumberController.text.isEmpty
+                ? CardData.hiddenCardNumber
+                : _formatCardNumber(_cardNumberController.text),
+            cardholderName: _cardholderController.text.isEmpty
+                ? 'YOUR NAME'
+                : _cardholderController.text,
+            expiryDate: _expiryController.text.isEmpty
+                ? 'MM/YY'
+                : _expiryController.text,
+            backgroundColor: faceBackgroundColor,
+            foregroundColor: foregroundColor,
           ),
         ),
       ),
@@ -530,19 +469,12 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
           ),
         ),
       ),
-      style: AppTypography.mono(
-        fontSize: 16,
-        letterSpacing: 1,
-        color: themeProvider.getPrimaryTextColor(),
-      ),
+      style: AppTypography.bodyLarge(color: themeProvider.getPrimaryTextColor())
+          .copyWith(letterSpacing: 0.8),
       onChanged: (value) {
         final cleaned = value.replaceAll(' ', '');
         final newNetwork = CardNetworkUtils.detectNetwork(cleaned);
-        if (newNetwork != _detectedNetwork) {
-          setState(() {
-            _detectedNetwork = newNetwork;
-          });
-        }
+        setState(() => _detectedNetwork = newNetwork);
       },
       validator: (value) {
         if (value == null || value.isEmpty) return 'Required';
@@ -566,8 +498,7 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
         ExpiryDateFormatter(),
       ],
       decoration: _inputDecoration('MM/YY', Icons.calendar_today),
-      style: AppTypography.mono(
-        fontSize: 16,
+      style: AppTypography.bodyLarge(
         color: themeProvider.getPrimaryTextColor(),
       ),
       onChanged: (value) {
@@ -596,8 +527,7 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
         CvvFormatter(network: _detectedNetwork),
       ],
       decoration: _inputDecoration(cvvLabel, Icons.lock_outline),
-      style: AppTypography.mono(
-        fontSize: 16,
+      style: AppTypography.bodyLarge(
         color: themeProvider.getPrimaryTextColor(),
       ),
       validator: (value) {
@@ -800,10 +730,25 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
 
   Widget _buildBankChip(BankInfo bank) {
     final isSelected = _selectedBank?.id == bank.id;
+    final scheme = Theme.of(context).colorScheme;
+    final selectedBackground = Color.alphaBlend(
+      bank.primaryColor.withValues(
+        alpha: scheme.brightness == Brightness.dark ? 0.28 : 0.14,
+      ),
+      scheme.surfaceContainerHighest,
+    );
+
     return ChoiceChip(
       selected: isSelected,
       avatar: BankLogo(bank: bank, size: 18, useSmall: true),
       label: Text(bank.shortName),
+      backgroundColor: scheme.surfaceContainerHighest,
+      selectedColor: selectedBackground,
+      showCheckmark: false,
+      side: BorderSide(
+        color: isSelected ? bank.primaryColor : scheme.outlineVariant,
+        width: isSelected ? 1.5 : 1,
+      ),
       onSelected: (_) => setState(() => _selectedBank = bank),
     );
   }

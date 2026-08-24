@@ -2,9 +2,11 @@ import 'package:cards_wallet/main.dart';
 import 'package:cards_wallet/models/card_data.dart';
 import 'package:cards_wallet/models/card_group.dart';
 import 'package:cards_wallet/providers/card_view_provider.dart';
+import 'package:cards_wallet/providers/app_lock_provider.dart';
 import 'package:cards_wallet/providers/nfc_provider.dart';
 import 'package:cards_wallet/providers/profile_provider.dart';
 import 'package:cards_wallet/providers/theme_provider.dart';
+import 'package:cards_wallet/providers/app_icon_provider.dart';
 import 'package:cards_wallet/screens/saved_cards_screen.dart';
 import 'package:cards_wallet/screens/developer_options_screen.dart';
 import 'package:flutter/material.dart';
@@ -55,7 +57,9 @@ Widget _home({required Future<List<CardData>> Function() cardLoader}) {
       ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ChangeNotifierProvider(create: (_) => NfcProvider()),
       ChangeNotifierProvider(create: (_) => CardViewProvider()),
+      ChangeNotifierProvider(create: (_) => AppLockProvider()),
       ChangeNotifierProvider(create: (_) => ProfileProvider()),
+      ChangeNotifierProvider(create: (_) => AppIconProvider()),
     ],
     child: MaterialApp(
       home: SavedCardsScreen(
@@ -75,10 +79,9 @@ void main() {
     SharedPreferences.setMockInitialValues({});
 
     await tester.pumpWidget(const MyApp());
-    expect(find.text('CardVault'), findsOneWidget);
+    expect(find.byKey(const ValueKey('splash')), findsNothing);
 
-    await tester.pump(const Duration(milliseconds: 1400));
-    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
 
     expect(find.text('Welcome to\nCardVault'), findsOneWidget);
     expect(find.byKey(const ValueKey('onboarding-name-field')), findsOneWidget);
@@ -124,8 +127,7 @@ void main() {
     final semantics = tester.ensureSemantics();
 
     await tester.pumpWidget(const MyApp());
-    await tester.pump(const Duration(milliseconds: 1400));
-    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
 
     expect(find.text('CardVault is locked'), findsOneWidget);
     expect(find.bySemanticsLabel(RegExp(r'CardVault locked')), findsOneWidget);
@@ -289,6 +291,46 @@ void main() {
     final deleteAll = find.byKey(const ValueKey('delete-all-cards'));
     expect(deleteAll, findsOneWidget);
     expect(tester.widget<InkWell>(deleteAll).onTap, isNull);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Image &&
+            widget.image is AssetImage &&
+            (widget.image as AssetImage).assetName ==
+                'assets/branding/app_icon_3d.png',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('returning from unchanged settings keeps the loaded wallet', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'profile_display_name': 'Avery',
+      'card_view_mode': 'grid',
+    });
+    var loadCount = 0;
+
+    await tester.pumpWidget(
+      _home(
+        cardLoader: () async {
+          loadCount++;
+          return _loadTestCards();
+        },
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 700));
+    expect(loadCount, 1);
+
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(loadCount, 1);
+    expect(find.text('•••• 1111'), findsOneWidget);
+    expect(find.text('•••• 2222'), findsOneWidget);
   });
 
   testWidgets('five app version taps reveal the developer options page', (

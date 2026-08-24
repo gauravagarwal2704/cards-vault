@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 /// Outfit-based type scale. Prefer semantic helpers over raw sizes.
 class AppTypography {
@@ -182,7 +181,8 @@ class AppTypography {
     double? letterSpacing,
     double? height,
   }) {
-    return GoogleFonts.sourceCodePro(
+    return TextStyle(
+      fontFamily: 'monospace',
       fontSize: fontSize,
       fontWeight: fontWeight,
       color: color,

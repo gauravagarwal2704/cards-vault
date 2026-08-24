@@ -6,24 +6,12 @@
 -keep class io.flutter.**  { *; }
 -keep class io.flutter.plugins.**  { *; }
 
-# Google ML Kit
--keep class com.google.mlkit.** { *; }
--keep class com.google.android.gms.** { *; }
--dontwarn com.google.mlkit.vision.text.chinese.**
--dontwarn com.google.mlkit.vision.text.devanagari.**
--dontwarn com.google.mlkit.vision.text.japanese.**
--dontwarn com.google.mlkit.vision.text.korean.**
-
 # NFC
 -keep class com.gtsz.flutternfckit.** { *; }
 
 # Encryption
 -keep class javax.crypto.** { *; }
 -keep class javax.crypto.spec.** { *; }
-
-# TensorFlow Lite
--keep class org.tensorflow.lite.** { *; }
--dontwarn org.tensorflow.lite.gpu.**
 
 # uCrop (image_cropper) references OkHttp for remote image URIs.
 -dontwarn okhttp3.**

@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 import '../providers/theme_provider.dart';
 import '../providers/app_lock_provider.dart';
 import '../providers/profile_provider.dart';
+import '../providers/app_icon_provider.dart';
 import '../services/secure_card_storage.dart';
 import '../services/auth_service.dart';
 import '../models/theme_config.dart' as config;
@@ -21,12 +22,15 @@ import '../theme/app_colors.dart';
 import '../theme/app_shapes.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/backup_password_dialog.dart';
+import '../widgets/app_icon_artwork.dart';
 import 'appearance_screen.dart';
 import 'ai_scan_settings_screen.dart';
 import 'developer_options_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({super.key, this.onCardsChanged});
+
+  final Future<void> Function()? onCardsChanged;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -140,6 +144,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       await _cardStorage.deleteAllCards();
+      await widget.onCardsChanged?.call();
       if (!mounted) return;
       setState(() {
         _cardCount = 0;
@@ -419,6 +424,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
 
       if (mounted) {
+        await widget.onCardsChanged?.call();
+        if (!mounted) return;
         await _loadData();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -480,11 +487,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final themeProvider = context.watch<ThemeProvider>();
     final appLockProvider = context.watch<AppLockProvider>();
     final isDark = themeProvider.isDarkMode;
+    final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       body: CustomScrollView(
         slivers: [
-          const SliverAppBar.large(title: Text('Settings')),
+          SliverAppBar(
+            title: const Text('Settings'),
+            pinned: true,
+            backgroundColor: scheme.surface,
+            foregroundColor: scheme.onSurface,
+            surfaceTintColor: Colors.transparent,
+            elevation: 0,
+            scrolledUnderElevation: 4,
+            shadowColor: scheme.shadow.withValues(alpha: 0.24),
+          ),
           SliverLayoutBuilder(
             builder: (context, constraints) {
               final horizontal = AppSpacing.pageHorizontal(
@@ -590,6 +607,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildAppearanceSection(ThemeProvider themeProvider) {
+    final appIcon = context.watch<AppIconProvider>().selected;
     final modeLabel = switch (themeProvider.brightnessMode) {
       config.AppBrightnessMode.system => 'System',
       config.AppBrightnessMode.light => 'Light',
@@ -627,7 +645,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      modeLabel,
+                      '$modeLabel · ${appIcon.label} icon',
                       style: AppTypography.caption(
                         color: themeProvider.getSecondaryTextColor(),
                       ),
@@ -856,27 +874,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final scheme = Theme.of(context).colorScheme;
     final primary = scheme.onSurface;
     final secondary = scheme.onSurfaceVariant;
+    final appIcon = context.watch<AppIconProvider>().selected;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: 82,
-          height: 82,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(22),
-            boxShadow: [
-              BoxShadow(
-                color: scheme.shadow.withValues(alpha: 0.16),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Image.asset(
-            'assets/branding/cardvault_icon.png',
-            fit: BoxFit.cover,
-          ),
+        AppIconArtwork(
+          option: appIcon,
+          size: 82,
+          borderRadius: 22,
+          addSurfaceShadow: true,
         ),
         const SizedBox(height: 12),
         Text(

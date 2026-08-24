@@ -201,19 +201,78 @@ class CardAttachmentsEditor extends StatelessWidget {
   }
 }
 
-class CardAttachmentsGallery extends StatelessWidget {
+class CardAttachmentsGallery extends StatefulWidget {
   final String cardId;
   final List<String> attachmentIds;
+  final Animation<double>? loadAnimation;
 
   const CardAttachmentsGallery({
     super.key,
     required this.cardId,
     required this.attachmentIds,
+    @visibleForTesting this.loadAnimation,
   });
 
   @override
+  State<CardAttachmentsGallery> createState() => _CardAttachmentsGalleryState();
+}
+
+class _CardAttachmentsGalleryState extends State<CardAttachmentsGallery> {
+  Animation<double>? _routeAnimation;
+  bool _animationInitialized = false;
+  bool _canLoadImages = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _attachToAnimation(
+      widget.loadAnimation ?? ModalRoute.of(context)?.animation,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant CardAttachmentsGallery oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.loadAnimation, widget.loadAnimation)) {
+      _attachToAnimation(
+        widget.loadAnimation ?? ModalRoute.of(context)?.animation,
+      );
+    }
+  }
+
+  void _attachToAnimation(Animation<double>? routeAnimation) {
+    if (_animationInitialized && identical(routeAnimation, _routeAnimation)) {
+      return;
+    }
+
+    _routeAnimation?.removeStatusListener(_handleRouteStatus);
+    _routeAnimation = routeAnimation;
+    _animationInitialized = true;
+    _canLoadImages =
+        routeAnimation == null ||
+        routeAnimation.status == AnimationStatus.completed;
+    if (!_canLoadImages) {
+      routeAnimation?.addStatusListener(_handleRouteStatus);
+    }
+  }
+
+  void _handleRouteStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed || _canLoadImages || !mounted) {
+      return;
+    }
+    _routeAnimation?.removeStatusListener(_handleRouteStatus);
+    setState(() => _canLoadImages = true);
+  }
+
+  @override
+  void dispose() {
+    _routeAnimation?.removeStatusListener(_handleRouteStatus);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (attachmentIds.isEmpty) return const SizedBox.shrink();
+    if (widget.attachmentIds.isEmpty) return const SizedBox.shrink();
     final themeProvider = context.watch<ThemeProvider>();
 
     return Column(
@@ -227,46 +286,54 @@ class CardAttachmentsGallery extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        SizedBox(
-          height: 100,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: attachmentIds.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 10),
-            itemBuilder: (context, index) {
-              return GestureDetector(
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => _AttachmentViewer(
-                        items: attachmentIds
-                            .map(
-                              (id) => _ViewerItem.existing(
-                                cardId: cardId,
-                                attachmentId: id,
-                              ),
-                            )
-                            .toList(),
-                        initialIndex: index,
+        if (!_canLoadImages)
+          const SizedBox(
+            key: ValueKey('card-attachments-deferred'),
+            height: 100,
+          )
+        else
+          SizedBox(
+            key: const ValueKey('card-attachments-gallery'),
+            height: 100,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: widget.attachmentIds.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                return GestureDetector(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => _AttachmentViewer(
+                          items: widget.attachmentIds
+                              .map(
+                                (id) => _ViewerItem.existing(
+                                  cardId: widget.cardId,
+                                  attachmentId: id,
+                                ),
+                              )
+                              .toList(),
+                          initialIndex: index,
+                        ),
+                      ),
+                    );
+                  },
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      width: 100,
+                      height: 100,
+                      child: _EncryptedImage(
+                        cardId: widget.cardId,
+                        attachmentId: widget.attachmentIds[index],
+                        cacheSize: 300,
                       ),
                     ),
-                  );
-                },
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: SizedBox(
-                    width: 100,
-                    height: 100,
-                    child: _EncryptedImage(
-                      cardId: cardId,
-                      attachmentId: attachmentIds[index],
-                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
-        ),
       ],
     );
   }
@@ -353,7 +420,11 @@ class _ExistingThumb extends StatelessWidget {
       onRemove: onRemove,
       child: cardId == null
           ? const ColoredBox(color: Colors.black12)
-          : _EncryptedImage(cardId: cardId!, attachmentId: attachmentId),
+          : _EncryptedImage(
+              cardId: cardId!,
+              attachmentId: attachmentId,
+              cacheSize: 264,
+            ),
     );
   }
 }
@@ -403,8 +474,15 @@ class _ThumbShell extends StatelessWidget {
 class _EncryptedImage extends StatefulWidget {
   final String cardId;
   final String attachmentId;
+  final int? cacheSize;
+  final BoxFit fit;
 
-  const _EncryptedImage({required this.cardId, required this.attachmentId});
+  const _EncryptedImage({
+    required this.cardId,
+    required this.attachmentId,
+    this.cacheSize,
+    this.fit = BoxFit.cover,
+  });
 
   @override
   State<_EncryptedImage> createState() => _EncryptedImageState();
@@ -463,9 +541,11 @@ class _EncryptedImageState extends State<_EncryptedImage> {
     }
     return Image.memory(
       _bytes!,
-      fit: BoxFit.cover,
+      fit: widget.fit,
       width: double.infinity,
       height: double.infinity,
+      cacheWidth: widget.cacheSize,
+      cacheHeight: widget.cacheSize,
     );
   }
 }
@@ -524,19 +604,63 @@ class _AttachmentViewerState extends State<_AttachmentViewer> {
         itemBuilder: (context, i) {
           final item = widget.items[i];
           if (item.file != null) {
-            return InteractiveViewer(
-              child: Center(child: Image.file(item.file!)),
+            return ZoomablePhoto(
+              child: Image.file(
+                item.file!,
+                fit: BoxFit.contain,
+                width: double.infinity,
+                height: double.infinity,
+              ),
             );
           }
-          return InteractiveViewer(
-            child: Center(
-              child: _EncryptedImage(
-                cardId: item.cardId!,
-                attachmentId: item.attachmentId!,
-              ),
+          return ZoomablePhoto(
+            child: _EncryptedImage(
+              cardId: item.cardId!,
+              attachmentId: item.attachmentId!,
+              fit: BoxFit.contain,
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// A full-screen photo surface that starts fitted, supports pinch zoom in and
+/// out, and resets to the fitted view on double tap.
+class ZoomablePhoto extends StatefulWidget {
+  final Widget child;
+
+  const ZoomablePhoto({super.key, required this.child});
+
+  @override
+  State<ZoomablePhoto> createState() => _ZoomablePhotoState();
+}
+
+class _ZoomablePhotoState extends State<ZoomablePhoto> {
+  final TransformationController _transformationController =
+      TransformationController();
+
+  @override
+  void dispose() {
+    _transformationController.dispose();
+    super.dispose();
+  }
+
+  void _resetZoom() {
+    _transformationController.value = Matrix4.identity();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onDoubleTap: _resetZoom,
+      child: InteractiveViewer(
+        transformationController: _transformationController,
+        minScale: 0.5,
+        maxScale: 5,
+        boundaryMargin: const EdgeInsets.all(80),
+        child: SizedBox.expand(child: widget.child),
       ),
     );
   }

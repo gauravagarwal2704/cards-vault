@@ -14,6 +14,52 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>CFBundleIcons</key>
+	<dict>
+		<key>CFBundlePrimaryIcon</key>
+		<dict>
+			<key>CFBundleIconName</key>
+			<string>AppIcon</string>
+		</dict>
+		<key>CFBundleAlternateIcons</key>
+		<dict>
+			<key>AppIconPurple</key>
+			<dict><key>CFBundleIconName</key><string>AppIconPurple</string></dict>
+			<key>AppIconMulticolor</key>
+			<dict><key>CFBundleIconName</key><string>AppIconMulticolor</string></dict>
+			<key>AppIconOcean</key>
+			<dict><key>CFBundleIconName</key><string>AppIconOcean</string></dict>
+			<key>AppIconEmerald</key>
+			<dict><key>CFBundleIconName</key><string>AppIconEmerald</string></dict>
+			<key>AppIconSunset</key>
+			<dict><key>CFBundleIconName</key><string>AppIconSunset</string></dict>
+			<key>AppIconRed</key>
+			<dict><key>CFBundleIconName</key><string>AppIconRed</string></dict>
+		</dict>
+	</dict>
+	<key>CFBundleIcons~ipad</key>
+	<dict>
+		<key>CFBundlePrimaryIcon</key>
+		<dict>
+			<key>CFBundleIconName</key>
+			<string>AppIcon</string>
+		</dict>
+		<key>CFBundleAlternateIcons</key>
+		<dict>
+			<key>AppIconPurple</key>
+			<dict><key>CFBundleIconName</key><string>AppIconPurple</string></dict>
+			<key>AppIconMulticolor</key>
+			<dict><key>CFBundleIconName</key><string>AppIconMulticolor</string></dict>
+			<key>AppIconOcean</key>
+			<dict><key>CFBundleIconName</key><string>AppIconOcean</string></dict>
+			<key>AppIconEmerald</key>
+			<dict><key>CFBundleIconName</key><string>AppIconEmerald</string></dict>
+			<key>AppIconSunset</key>
+			<dict><key>CFBundleIconName</key><string>AppIconSunset</string></dict>
+			<key>AppIconRed</key>
+			<dict><key>CFBundleIconName</key><string>AppIconRed</string></dict>
+		</dict>
+	</dict>
 	<key>CFBundleName</key>
 	<string>CardVault</string>
 	<key>CFBundlePackageType</key>

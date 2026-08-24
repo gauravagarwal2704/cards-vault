@@ -27,10 +27,6 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-
-        ndk {
-            abiFilters 'arm64-v8a'
-        }
     }
 
     signingConfigs {
@@ -76,4 +72,15 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Stripe's last portable CardScan model/runtime is vendored as a local,
+    // telemetry-free Android module. It analyzes CameraX preview frames and
+    // does not use Google Play Services or the Stripe SDK's analytics layer.
+    implementation project(":stripe-cardscan-local")
+
+    // Tesseract is retained only for expiry/name extraction from the single
+    // preview crop that CardScan accepted. It never receives a live stream.
+    implementation "cz.adaptech.tesseract4android:tesseract4android:4.9.0"
 }

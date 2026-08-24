@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="cardvault_splash">#0B0B14</color>
-    <color name="cardvault_icon_background">#FFFFFF</color>
+    <color name="cardvault_splash">#FAF9FF</color>
+    <color name="cardvault_icon_background">#F7F4FF</color>
 </resources>

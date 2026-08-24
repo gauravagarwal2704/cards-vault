@@ -16,11 +16,53 @@ import 'ocr_service.dart';
 class AiCardScanException implements Exception {
   final String message;
   final AiScanDiagnostics? diagnostics;
+  final bool isRetryable;
+  final int attempts;
 
-  const AiCardScanException(this.message, {this.diagnostics});
+  const AiCardScanException(
+    this.message, {
+    this.diagnostics,
+    this.isRetryable = false,
+    this.attempts = 1,
+  });
+
+  String get userMessage =>
+      attempts > 1 ? '$message Failed after $attempts attempts.' : message;
+
+  AiCardScanException withAttempts(int value) => AiCardScanException(
+    message,
+    diagnostics: diagnostics,
+    isRetryable: isRetryable,
+    attempts: value,
+  );
 
   @override
   String toString() => message;
+}
+
+typedef AiScanAttemptCallback = void Function(int attempt, int maxAttempts);
+
+class AiScanRetryPolicy {
+  final int maxRetries;
+
+  const AiScanRetryPolicy({this.maxRetries = 3});
+
+  int get maxAttempts => maxRetries + 1;
+
+  bool isRetryableStatus(int statusCode) =>
+      statusCode == 408 ||
+      statusCode == 425 ||
+      statusCode == 429 ||
+      statusCode >= 500;
+
+  Duration delayBeforeRetry(int retryNumber) {
+    const delays = [
+      Duration(milliseconds: 450),
+      Duration(milliseconds: 900),
+      Duration(milliseconds: 1600),
+    ];
+    return delays[(retryNumber - 1).clamp(0, delays.length - 1)];
+  }
 }
 
 class AiScanDiagnostics {
@@ -118,9 +160,13 @@ class AiKeyValidationResult {
 /// provider, and provider output is treated as an untrusted candidate.
 class AiCardScanService {
   final AiScanLogService _logService = AiScanLogService();
+  final AiScanRetryPolicy retryPolicy;
+
+  AiCardScanService({this.retryPolicy = const AiScanRetryPolicy()});
 
   static const _prompt = '''
-Read only the payment card visible in this image.
+Read only the same payment card visible in these one or more nearby frames.
+Compare the frames to overcome glare, blur, low contrast, or embossed digits.
 Extract the primary card number, expiry date, and cardholder name exactly as printed.
 Never infer obscured characters. Never extract, mention, or return a CVV or security code.
 Use null for any field that is not clearly visible. Return only the requested schema.
@@ -217,10 +263,11 @@ Use null for any field that is not clearly visible. Return only the requested sc
   }
 
   Future<AiCardScanOutcome> scan({
-    required String imagePath,
+    required List<String> imagePaths,
     required NormalizedCardCrop? crop,
     required OCRResult localResult,
     required AiScanSettings settings,
+    AiScanAttemptCallback? onAttempt,
   }) async {
     if (!settings.isConfigured) {
       throw const AiCardScanException(
@@ -228,92 +275,109 @@ Use null for any field that is not clearly visible. Return only the requested sc
       );
     }
 
-    final preparedImage = await _preparePrivateUpload(imagePath, crop: crop);
+    if (imagePaths.isEmpty) {
+      throw const AiCardScanException('No card image was available to scan.');
+    }
+
+    final preparedImages = <_PreparedAiImage>[];
+    for (final path in imagePaths.take(3)) {
+      preparedImages.add(await _preparePrivateUpload(path, crop: crop));
+    }
     final requestDiagnostics = _requestDiagnostics(
       settings.provider,
-      preparedImage,
+      preparedImages,
     );
-    final client = _newHttpClient();
-    try {
-      final providerResult = switch (settings.provider) {
-        AiScanProvider.gemini => await _scanWithGemini(
-          client,
-          preparedImage,
-          settings.apiKey,
-        ),
-        AiScanProvider.openAi => await _scanWithOpenAi(
-          client,
-          preparedImage,
-          settings.apiKey,
-        ),
-      };
-      final validated = _validatedResult(providerResult.fields, localResult);
-      final diagnostics = providerResult.diagnostics.copyWith(
-        validationSummary: validated.validationSummary,
+    for (var attempt = 1; attempt <= retryPolicy.maxAttempts; attempt++) {
+      onAttempt?.call(attempt, retryPolicy.maxAttempts);
+      final client = _newHttpClient();
+      try {
+        final providerResult = switch (settings.provider) {
+          AiScanProvider.gemini => await _scanWithGemini(
+            client,
+            preparedImages,
+            settings.apiKey,
+          ),
+          AiScanProvider.openAi => await _scanWithOpenAi(
+            client,
+            preparedImages,
+            settings.apiKey,
+          ),
+        };
+        final validated = _validatedResult(providerResult.fields, localResult);
+        final diagnostics = providerResult.diagnostics.copyWith(
+          validationSummary: validated.validationSummary,
+        );
+        await _recordLog(
+          diagnostics,
+          succeeded: true,
+          message: attempt == 1
+              ? 'Provider response received and parsed.'
+              : 'Provider response received and parsed on attempt $attempt.',
+        );
+        return AiCardScanOutcome(
+          result: validated.result,
+          diagnostics: diagnostics,
+        );
+      } catch (rawError) {
+        final error = _asScanException(
+          rawError,
+          provider: settings.provider,
+          diagnostics: requestDiagnostics,
+        );
+        await _recordLog(
+          error.diagnostics ?? requestDiagnostics,
+          succeeded: false,
+          message:
+              'Attempt $attempt/${retryPolicy.maxAttempts}: ${error.message}',
+        );
+        final canRetry = error.isRetryable && attempt < retryPolicy.maxAttempts;
+        if (!canRetry) throw error.withAttempts(attempt);
+        await Future<void>.delayed(retryPolicy.delayBeforeRetry(attempt));
+      } finally {
+        client.close(force: true);
+      }
+    }
+
+    throw const AiCardScanException('The smart scan could not be completed.');
+  }
+
+  AiCardScanException _asScanException(
+    Object error, {
+    required AiScanProvider provider,
+    required AiScanDiagnostics diagnostics,
+  }) {
+    if (error is AiCardScanException) return error;
+    if (error is SocketException) {
+      return AiCardScanException(
+        'Could not reach ${provider.label}. Check your connection.',
+        diagnostics: diagnostics,
+        isRetryable: true,
       );
-      await _recordLog(
-        diagnostics,
-        succeeded: true,
-        message: 'Provider response received and parsed.',
+    }
+    if (error is TimeoutException) {
+      return AiCardScanException(
+        'The smart scan timed out. Check your connection and try again.',
+        diagnostics: diagnostics,
+        isRetryable: true,
       );
-      return AiCardScanOutcome(
-        result: validated.result,
+    }
+    if (error is HandshakeException) {
+      return AiCardScanException(
+        'A secure connection to the AI provider could not be established.',
+        diagnostics: diagnostics,
+        isRetryable: true,
+      );
+    }
+    if (error is FormatException) {
+      return AiCardScanException(
+        '${provider.label} returned an invalid result.',
         diagnostics: diagnostics,
       );
-    } on AiCardScanException catch (error) {
-      await _recordLog(
-        error.diagnostics ?? requestDiagnostics,
-        succeeded: false,
-        message: error.message,
-      );
-      rethrow;
-    } on SocketException {
-      final error = AiCardScanException(
-        'Could not reach ${settings.provider.label}. Check your connection.',
-        diagnostics: requestDiagnostics,
-      );
-      await _recordLog(
-        requestDiagnostics,
-        succeeded: false,
-        message: error.message,
-      );
-      throw error;
-    } on TimeoutException {
-      final error = AiCardScanException(
-        'The smart scan took too long. The photo was not retained by CardVault.',
-        diagnostics: requestDiagnostics,
-      );
-      await _recordLog(
-        requestDiagnostics,
-        succeeded: false,
-        message: error.message,
-      );
-      throw error;
-    } on HandshakeException {
-      final error = AiCardScanException(
-        'A secure connection to the AI provider could not be established.',
-        diagnostics: requestDiagnostics,
-      );
-      await _recordLog(
-        requestDiagnostics,
-        succeeded: false,
-        message: error.message,
-      );
-      throw error;
-    } on FormatException {
-      final error = AiCardScanException(
-        '${settings.provider.label} returned an invalid result.',
-        diagnostics: requestDiagnostics,
-      );
-      await _recordLog(
-        requestDiagnostics,
-        succeeded: false,
-        message: error.message,
-      );
-      throw error;
-    } finally {
-      client.close(force: true);
     }
+    return AiCardScanException(
+      'An unexpected smart scan error occurred (${error.runtimeType}).',
+      diagnostics: diagnostics,
+    );
   }
 
   HttpClient _newHttpClient() {
@@ -352,7 +416,7 @@ Use null for any field that is not clearly visible. Return only the requested sc
 
   Future<_ProviderScanResult> _scanWithGemini(
     HttpClient client,
-    _PreparedAiImage image,
+    List<_PreparedAiImage> images,
     String apiKey,
   ) async {
     final request = await client.postUrl(
@@ -367,11 +431,12 @@ Use null for any field that is not clearly visible. Return only the requested sc
           'model': AiScanProvider.gemini.apiModelId,
           'input': [
             {'type': 'text', 'text': _prompt},
-            {
-              'type': 'image',
-              'data': base64Encode(image.bytes),
-              'mime_type': 'image/jpeg',
-            },
+            for (final image in images)
+              {
+                'type': 'image',
+                'data': base64Encode(image.bytes),
+                'mime_type': 'image/jpeg',
+              },
           ],
           'response_format': {
             'type': 'text',
@@ -390,7 +455,7 @@ Use null for any field that is not clearly visible. Return only the requested sc
     final body = await utf8.decoder.bind(response).join();
     final diagnostics = _responseDiagnostics(
       AiScanProvider.gemini,
-      image,
+      images,
       response.statusCode,
       body,
     );
@@ -409,7 +474,7 @@ Use null for any field that is not clearly visible. Return only the requested sc
 
   Future<_ProviderScanResult> _scanWithOpenAi(
     HttpClient client,
-    _PreparedAiImage image,
+    List<_PreparedAiImage> images,
     String apiKey,
   ) async {
     final request = await client.postUrl(
@@ -430,12 +495,13 @@ Use null for any field that is not clearly visible. Return only the requested sc
               'role': 'user',
               'content': [
                 {'type': 'input_text', 'text': _prompt},
-                {
-                  'type': 'input_image',
-                  'image_url':
-                      'data:image/jpeg;base64,${base64Encode(image.bytes)}',
-                  'detail': 'high',
-                },
+                for (final image in images)
+                  {
+                    'type': 'input_image',
+                    'image_url':
+                        'data:image/jpeg;base64,${base64Encode(image.bytes)}',
+                    'detail': 'high',
+                  },
               ],
             },
           ],
@@ -455,7 +521,7 @@ Use null for any field that is not clearly visible. Return only the requested sc
     final body = await utf8.decoder.bind(response).join();
     final diagnostics = _responseDiagnostics(
       AiScanProvider.openAi,
-      image,
+      images,
       response.statusCode,
       body,
     );
@@ -481,25 +547,33 @@ Use null for any field that is not clearly visible. Return only the requested sc
 
   AiScanDiagnostics _requestDiagnostics(
     AiScanProvider provider,
-    _PreparedAiImage image,
+    List<_PreparedAiImage> images,
   ) {
     final endpoint = switch (provider) {
       AiScanProvider.gemini =>
         'https://generativelanguage.googleapis.com/v1beta/interactions',
       AiScanProvider.openAi => 'https://api.openai.com/v1/responses',
     };
-    final sizeKb = (image.bytes.length / 1024).toStringAsFixed(1);
+    final totalBytes = images.fold<int>(
+      0,
+      (total, image) => total + image.bytes.length,
+    );
+    final sizeKb = (totalBytes / 1024).toStringAsFixed(1);
+    final dimensions = images
+        .map((image) => '${image.width}×${image.height}')
+        .join(', ');
+    final imageLabel = images.length == 1 ? 'image' : 'frames';
     return AiScanDiagnostics(
       provider: provider,
       endpoint: endpoint,
       sentSummary:
-          '• One ${image.wasCropped ? 'cropped' : 'selected'} JPEG image (${image.width}×${image.height}, $sizeKb KB)\n'
-          '• Image was resized if necessary and re-encoded to remove EXIF, location, device, and timestamp metadata\n'
+          '• ${images.length} ${images.first.wasCropped ? 'cropped' : 'selected'} JPEG $imageLabel ($dimensions, $sizeKb KB total)\n'
+          '• Each image was resized if necessary and re-encoded to remove EXIF, location, device, and timestamp metadata\n'
           '• Instruction to read card number, expiry date, cardholder name, and confidence as structured JSON\n'
           '• Instruction to return null for uncertain fields and never extract CVV\n'
           '• Your saved API key is sent to this provider only as an HTTPS authentication header; it is redacted from this view\n'
           '• No offline OCR text, other saved cards, or unrelated app data is sent',
-      requestBody: _diagnosticRequestBody(provider, image),
+      requestBody: _diagnosticRequestBody(provider, images),
       httpStatus: null,
       responseBody: '(No HTTP response was received)',
     );
@@ -507,11 +581,11 @@ Use null for any field that is not clearly visible. Return only the requested sc
 
   AiScanDiagnostics _responseDiagnostics(
     AiScanProvider provider,
-    _PreparedAiImage image,
+    List<_PreparedAiImage> images,
     int statusCode,
     String body,
   ) {
-    final request = _requestDiagnostics(provider, image);
+    final request = _requestDiagnostics(provider, images);
     return AiScanDiagnostics(
       provider: provider,
       endpoint: request.endpoint,
@@ -524,20 +598,21 @@ Use null for any field that is not clearly visible. Return only the requested sc
 
   String _diagnosticRequestBody(
     AiScanProvider provider,
-    _PreparedAiImage image,
+    List<_PreparedAiImage> images,
   ) {
-    final imagePlaceholder =
+    String imagePlaceholder(_PreparedAiImage image) =>
         '[JPEG IMAGE DATA OMITTED FROM LOG — ${image.bytes.length} bytes]';
     final payload = switch (provider) {
       AiScanProvider.gemini => {
         'model': provider.apiModelId,
         'input': [
           {'type': 'text', 'text': _prompt},
-          {
-            'type': 'image',
-            'data': imagePlaceholder,
-            'mime_type': 'image/jpeg',
-          },
+          for (final image in images)
+            {
+              'type': 'image',
+              'data': imagePlaceholder(image),
+              'mime_type': 'image/jpeg',
+            },
         ],
         'response_format': {
           'type': 'text',
@@ -559,11 +634,12 @@ Use null for any field that is not clearly visible. Return only the requested sc
             'role': 'user',
             'content': [
               {'type': 'input_text', 'text': _prompt},
-              {
-                'type': 'input_image',
-                'image_url': imagePlaceholder,
-                'detail': 'high',
-              },
+              for (final image in images)
+                {
+                  'type': 'input_image',
+                  'image_url': imagePlaceholder(image),
+                  'detail': 'high',
+                },
             ],
           },
         ],
@@ -603,6 +679,7 @@ Use null for any field that is not clearly visible. Return only the requested sc
     throw AiCardScanException(
       _statusMessage(provider, statusCode),
       diagnostics: diagnostics,
+      isRetryable: retryPolicy.isRetryableStatus(statusCode),
     );
   }
 

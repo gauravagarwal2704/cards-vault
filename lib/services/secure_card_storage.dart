@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -34,7 +35,9 @@ class SecureCardStorage {
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
     aOptions: AndroidOptions(
       encryptedSharedPreferences: true,
-      resetOnError: true,
+      // A transient keystore error must be surfaced to the caller. Letting the
+      // plugin reset here can turn one failed read into an empty wallet.
+      resetOnError: false,
     ),
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
   );
@@ -42,42 +45,90 @@ class SecureCardStorage {
   static const String _cardsListKey = 'saved_cards_list';
   static const String _cardPrefix = 'card_';
 
-  Future<String> saveCard(CardData cardData) async {
+  // Cards are stored as an index plus one secure-storage entry per card. Keep
+  // reads and mutations on a single queue so a list load can never observe a
+  // save/delete half way through its multi-key operation.
+  Future<void> _operationTail = Future<void>.value();
+
+  Future<T> _serialized<T>(Future<T> Function() operation) async {
+    final previous = _operationTail;
+    final release = Completer<void>();
+    _operationTail = release.future;
+
+    await previous;
     try {
-      final String cardId = cardData.id ?? const Uuid().v4();
-      final CardData cardToSave = cardData.copyWith(
-        id: cardId,
-        savedDate: cardData.savedDate ?? DateTime.now(),
-      );
-
-      final String cardJsonStr = jsonEncode(cardToSave.toJson());
-      await _secureStorage.write(
-        key: '$_cardPrefix$cardId',
-        value: cardJsonStr,
-      );
-
-      await _addCardIdToList(cardId);
-
-      return cardId;
-    } catch (e) {
-      throw Exception('Failed to save card: $e');
+      return await operation();
+    } finally {
+      release.complete();
     }
   }
 
-  Future<void> updateCard(CardData cardData) async {
+  Future<String> saveCard(CardData cardData) {
+    return _serialized(() async {
+      try {
+        final String cardId = cardData.id ?? const Uuid().v4();
+        final CardData cardToSave = cardData.copyWith(
+          id: cardId,
+          savedDate: cardData.savedDate ?? DateTime.now(),
+        );
+
+        final String cardJsonStr = jsonEncode(cardToSave.toJson());
+        await _secureStorage.write(
+          key: '$_cardPrefix$cardId',
+          value: cardJsonStr,
+        );
+
+        await _addCardIdToList(cardId);
+
+        return cardId;
+      } catch (e) {
+        throw Exception('Failed to save card: $e');
+      }
+    });
+  }
+
+  Future<void> updateCard(CardData cardData) {
     if (cardData.id == null) {
-      throw Exception('Cannot update card without ID');
+      return Future<void>.error(Exception('Cannot update card without ID'));
     }
 
-    try {
-      final String cardJson = jsonEncode(cardData.toJson());
-      await _secureStorage.write(
-        key: '$_cardPrefix${cardData.id}',
-        value: cardJson,
-      );
-    } catch (e) {
-      throw Exception('Failed to update card: $e');
-    }
+    return _serialized(() async {
+      try {
+        await _writeCard(cardData);
+      } catch (e) {
+        throw Exception('Failed to update card: $e');
+      }
+    });
+  }
+
+  /// Updates one aspect of the latest persisted card instead of writing a
+  /// potentially stale full-record copy held by a background screen task.
+  Future<CardData?> updateCardById(
+    String cardId,
+    CardData Function(CardData current) update,
+  ) {
+    return _serialized(() async {
+      try {
+        final current = await _loadCard(cardId);
+        if (current == null) return null;
+
+        final updated = update(current);
+        if (updated.id != cardId) {
+          throw StateError('A card update cannot change its ID');
+        }
+        await _writeCard(updated);
+        return updated;
+      } catch (e) {
+        throw Exception('Failed to update card: $e');
+      }
+    });
+  }
+
+  Future<void> _writeCard(CardData cardData) {
+    return _secureStorage.write(
+      key: '$_cardPrefix${cardData.id}',
+      value: jsonEncode(cardData.toJson()),
+    );
   }
 
   Future<void> _addCardIdToList(String cardId) async {
@@ -97,48 +148,67 @@ class SecureCardStorage {
       return [];
     }
 
-    try {
-      final List<dynamic> decoded = jsonDecode(cardsListJson);
-      return decoded.cast<String>();
-    } catch (e) {
-      return [];
+    final decoded = jsonDecode(cardsListJson);
+    if (decoded is! List<dynamic>) {
+      throw const FormatException('Saved card index is not a list');
     }
+    return decoded.cast<String>();
   }
 
-  Future<List<CardData>> loadCards() async {
-    try {
-      final List<String> cardIds = await _getCardIdsList();
-      final List<CardData> cards = [];
+  Future<List<CardData>> loadCards() {
+    return _serialized(() async {
+      try {
+        final List<String> cardIds = await _getCardIdsList();
+        final List<CardData> cards = [];
 
-      for (String cardId in cardIds) {
-        try {
+        for (final cardId in cardIds) {
+          // Keep the platform read outside the parse recovery below. A secure
+          // storage failure is not evidence that the card was deleted, and
+          // returning a partial list would incorrectly replace the UI wallet.
           final String? cardJson = await _secureStorage.read(
             key: '$_cardPrefix$cardId',
           );
-          if (cardJson != null) {
+          if (cardJson == null) {
+            throw StateError('Saved card $cardId is temporarily unavailable');
+          }
+
+          try {
             final Map<String, dynamic> cardMap = jsonDecode(cardJson);
             final CardData card = CardData.fromJson(cardMap);
             cards.add(card);
+          } catch (e) {
+            // A single malformed legacy record should not make every healthy
+            // card inaccessible. Unlike platform read failures, this result is
+            // deterministic and safe to isolate.
+            debugPrint('Skipping malformed saved card $cardId: $e');
           }
-        } catch (e) {
-          continue;
         }
+
+        cards.sort((a, b) {
+          if (a.savedDate == null && b.savedDate == null) return 0;
+          if (a.savedDate == null) return 1;
+          if (b.savedDate == null) return -1;
+          return b.savedDate!.compareTo(a.savedDate!);
+        });
+
+        return cards;
+      } catch (e) {
+        throw Exception('Failed to load cards: $e');
       }
-
-      cards.sort((a, b) {
-        if (a.savedDate == null && b.savedDate == null) return 0;
-        if (a.savedDate == null) return 1;
-        if (b.savedDate == null) return -1;
-        return b.savedDate!.compareTo(a.savedDate!);
-      });
-
-      return cards;
-    } catch (e) {
-      throw Exception('Failed to load cards: $e');
-    }
+    });
   }
 
-  Future<CardData?> loadCard(String cardId) async {
+  Future<CardData?> loadCard(String cardId) {
+    return _serialized(() async {
+      try {
+        return await _loadCard(cardId);
+      } catch (e) {
+        throw Exception('Failed to load card: $e');
+      }
+    });
+  }
+
+  Future<CardData?> _loadCard(String cardId) async {
     try {
       final String? cardJson = await _secureStorage.read(
         key: '$_cardPrefix$cardId',
@@ -154,43 +224,49 @@ class SecureCardStorage {
     }
   }
 
-  Future<void> deleteCard(String cardId) async {
-    try {
-      await _secureStorage.delete(key: '$_cardPrefix$cardId');
-
-      final List<String> cardIds = await _getCardIdsList();
-      cardIds.remove(cardId);
-      await _secureStorage.write(
-        key: _cardsListKey,
-        value: jsonEncode(cardIds),
-      );
-
-      await CardAttachmentStorage().deleteAllForCard(cardId);
-      await CardBackgroundStorage().deleteAllForCard(cardId);
-    } catch (e) {
-      throw Exception('Failed to delete card: $e');
-    }
-  }
-
-  Future<void> deleteAllCards() async {
-    try {
-      final List<String> cardIds = await _getCardIdsList();
-
-      for (String cardId in cardIds) {
+  Future<void> deleteCard(String cardId) {
+    return _serialized(() async {
+      try {
         await _secureStorage.delete(key: '$_cardPrefix$cardId');
+
+        final List<String> cardIds = await _getCardIdsList();
+        cardIds.remove(cardId);
+        await _secureStorage.write(
+          key: _cardsListKey,
+          value: jsonEncode(cardIds),
+        );
+
         await CardAttachmentStorage().deleteAllForCard(cardId);
         await CardBackgroundStorage().deleteAllForCard(cardId);
+      } catch (e) {
+        throw Exception('Failed to delete card: $e');
       }
-
-      await _secureStorage.delete(key: _cardsListKey);
-    } catch (e) {
-      throw Exception('Failed to delete all cards: $e');
-    }
+    });
   }
 
-  Future<int> getCardCount() async {
-    final List<String> cardIds = await _getCardIdsList();
-    return cardIds.length;
+  Future<void> deleteAllCards() {
+    return _serialized(() async {
+      try {
+        final List<String> cardIds = await _getCardIdsList();
+
+        for (String cardId in cardIds) {
+          await _secureStorage.delete(key: '$_cardPrefix$cardId');
+          await CardAttachmentStorage().deleteAllForCard(cardId);
+          await CardBackgroundStorage().deleteAllForCard(cardId);
+        }
+
+        await _secureStorage.delete(key: _cardsListKey);
+      } catch (e) {
+        throw Exception('Failed to delete all cards: $e');
+      }
+    });
+  }
+
+  Future<int> getCardCount() {
+    return _serialized(() async {
+      final List<String> cardIds = await _getCardIdsList();
+      return cardIds.length;
+    });
   }
 
   /// Writes a self-contained, password-encrypted `.cwbak` bundle. With

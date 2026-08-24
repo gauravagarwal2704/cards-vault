@@ -16,6 +16,7 @@ import '../theme/app_motion.dart';
 import '../utils/card_network_utils.dart';
 import '../utils/card_contrast.dart';
 import 'card_background_surface.dart';
+import 'wallet_card_hero.dart';
 
 class InfiniteCardDeck extends StatefulWidget {
   final List<CardData> cards;
@@ -530,7 +531,7 @@ class _InfiniteCardDeckState extends State<InfiniteCardDeck>
 
     if (!widget.selectionMode) {
       if (isFocused && card.id != null && !AppMotion.reduceMotion(context)) {
-        return Hero(tag: 'wallet-card-${card.id}', child: walletCard);
+        return WalletCardHero(tag: 'wallet-card-${card.id}', child: walletCard);
       }
       return walletCard;
     }

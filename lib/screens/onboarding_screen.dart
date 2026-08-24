@@ -5,8 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/profile_provider.dart';
+import '../providers/app_icon_provider.dart';
 import '../theme/app_motion.dart';
 import '../theme/app_typography.dart';
+import '../widgets/app_icon_artwork.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -93,13 +95,11 @@ class _OnboardingScreenState extends State<OnboardingScreen>
               children: [
                 Hero(
                   tag: 'cardvault-mark',
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(24),
-                    child: Image.asset(
-                      'assets/branding/cardvault_icon.png',
-                      width: 88,
-                      height: 88,
-                    ),
+                  child: AppIconArtwork(
+                    option: context.watch<AppIconProvider>().selected,
+                    size: 88,
+                    borderRadius: 24,
+                    addSurfaceShadow: true,
                   ),
                 ),
                 const Spacer(),
@@ -216,87 +216,6 @@ class _PromiseChip extends StatelessWidget {
       label: Text(label),
       backgroundColor: scheme.secondaryContainer,
       side: BorderSide.none,
-    );
-  }
-}
-
-class CardVaultSplashScreen extends StatefulWidget {
-  const CardVaultSplashScreen({super.key});
-
-  @override
-  State<CardVaultSplashScreen> createState() => _CardVaultSplashScreenState();
-}
-
-class _CardVaultSplashScreenState extends State<CardVaultSplashScreen>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: AppMotion.emphasized,
-  )..forward();
-  bool _motionConfigured = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_motionConfigured) return;
-    _motionConfigured = true;
-    if (AppMotion.reduceMotion(context)) _controller.value = 1;
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final curved = CurvedAnimation(
-      parent: _controller,
-      curve: AppMotion.enterCurve,
-    );
-
-    return Scaffold(
-      backgroundColor: colors.surface,
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ScaleTransition(
-              scale: Tween<double>(begin: 0.86, end: 1).animate(curved),
-              child: FadeTransition(
-                opacity: _controller,
-                child: Hero(
-                  tag: 'cardvault-mark',
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(30),
-                    child: Image.asset(
-                      'assets/branding/cardvault_icon.png',
-                      width: 124,
-                      height: 124,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 22),
-            FadeTransition(
-              opacity: CurvedAnimation(
-                parent: _controller,
-                curve: const Interval(0.35, 1, curve: Curves.easeOut),
-              ),
-              child: Text(
-                'CardVault',
-                style: AppTypography.display(
-                  color: colors.onSurface,
-                  fontSize: 34,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

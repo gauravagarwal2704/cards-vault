@@ -29,8 +29,12 @@ class ImageUtils {
   static const double maxBrightness = 220.0;
   static const double minContrast = 24.0;
   static const double maxGlareRatio = 0.18;
-  static const int minWidth = 800;
-  static const int minHeight = 500;
+  // These limits apply to the card crop, not the full camera frame. A card
+  // occupying the on-screen guide is commonly 300-600 px across even when the
+  // source photo is high resolution, and that is still ample for OCR after the
+  // recognition resize pass.
+  static const int minCardShortEdge = 280;
+  static const int minCardLongEdge = 440;
 
   static img.Image cropToNormalizedCard(
     img.Image image,
@@ -57,13 +61,17 @@ class ImageUtils {
   /// Adds a second OCR candidate for gallery photos where a landscape card is
   /// centered but surrounded by table/background. The original is always kept
   /// as well, so an off-center card cannot be made worse by this heuristic.
-  static img.Image centerCropToCardAspect(img.Image image) {
+  static img.Image centerCropToCardAspect(
+    img.Image image, {
+    bool portrait = false,
+  }) {
     const cardAspect = 1.586;
+    final targetAspect = portrait ? 1 / cardAspect : cardAspect;
     final currentAspect = image.width / image.height;
-    if ((currentAspect - cardAspect).abs() < 0.08) return image;
+    if ((currentAspect - targetAspect).abs() < 0.08) return image;
 
-    if (currentAspect > cardAspect) {
-      final width = (image.height * cardAspect).round();
+    if (currentAspect > targetAspect) {
+      final width = (image.height * targetAspect).round();
       return img.copyCrop(
         image,
         x: ((image.width - width) / 2).round(),
@@ -72,7 +80,7 @@ class ImageUtils {
         height: image.height,
       );
     }
-    final height = (image.width / cardAspect).round();
+    final height = (image.width / targetAspect).round();
     return img.copyCrop(
       image,
       x: 0,
@@ -158,24 +166,23 @@ class ImageUtils {
         image = cropToNormalizedCard(image, crop);
       }
 
-      if (image.width < minWidth || image.height < minHeight) {
-        return ImageQuality(
-          blurScore: 0,
-          brightness: 0,
-          isGoodQuality: false,
-          warning: 'Image resolution too low. Please move closer to the card.',
-        );
-      }
+      final shortEdge = min(image.width, image.height);
+      final longEdge = max(image.width, image.height);
+      final hasEnoughPixels =
+          shortEdge >= minCardShortEdge && longEdge >= minCardLongEdge;
 
-      double blurScore = calculateBlurScore(image);
-      double brightness = calculateAverageBrightness(image);
+      final blurScore = calculateBlurScore(image);
+      final brightness = calculateAverageBrightness(image);
       final contrast = calculateLuminanceContrast(image);
       final glareRatio = calculateGlareRatio(image);
 
       String? warning;
       bool isGoodQuality = true;
 
-      if (blurScore < minBlurScore) {
+      if (!hasEnoughPixels) {
+        warning = 'The card is small in the photo. Move closer for more reliable text recognition.';
+        isGoodQuality = false;
+      } else if (blurScore < minBlurScore) {
         warning = 'Image is blurry. Please hold the camera steady.';
         isGoodQuality = false;
       } else if (brightness < minBrightness) {

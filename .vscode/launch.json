@@ -28,5 +28,12 @@
       "program": "lib/main.dart",
       "deviceId": "emulator-5554"
     },
+    {
+      "name": "cards-wallet - OnePlus 13",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "deviceId": "acf6bb62"
+    },
   ]
 }

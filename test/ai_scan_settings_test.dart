@@ -37,6 +37,29 @@ void main() {
     expect(AiScanProvider.openAi.modelLabel, isNotEmpty);
   });
 
+  test('smart scan retries transient failures three times', () {
+    const policy = AiScanRetryPolicy();
+
+    expect(policy.maxRetries, 3);
+    expect(policy.maxAttempts, 4);
+    expect(policy.isRetryableStatus(408), isTrue);
+    expect(policy.isRetryableStatus(429), isTrue);
+    expect(policy.isRetryableStatus(503), isTrue);
+    expect(policy.isRetryableStatus(401), isFalse);
+    expect(policy.isRetryableStatus(413), isFalse);
+    expect(policy.delayBeforeRetry(2), greaterThan(policy.delayBeforeRetry(1)));
+  });
+
+  test('AI errors report the number of exhausted attempts', () {
+    const error = AiCardScanException(
+      'Could not reach the provider.',
+      isRetryable: true,
+      attempts: 4,
+    );
+
+    expect(error.userMessage, contains('Failed after 4 attempts'));
+  });
+
   test('provider diagnostics redact common API key formats', () {
     final safe = AiScanDiagnostics.safeResponseBody(
       '{"authorization":"Bearer secret-token-123",'

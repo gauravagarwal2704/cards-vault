@@ -9,6 +9,7 @@ import '../utils/card_network_utils.dart';
 import '../utils/card_contrast.dart';
 import 'bank_logo.dart';
 import 'card_background_surface.dart';
+import 'wallet_card_hero.dart';
 import 'card_network_logo.dart';
 
 const _tileAspectRatio = 1.586;
@@ -106,7 +107,7 @@ class CardTile extends StatelessWidget {
                 !selectionMode &&
                 card.id != null &&
                 !AppMotion.reduceMotion(context),
-            child: Hero(
+            child: WalletCardHero(
               tag: 'wallet-card-${card.id ?? card.hashCode}',
               child: Stack(
                 children: [

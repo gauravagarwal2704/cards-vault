@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
@@ -12,9 +13,9 @@ import '../services/auth_service.dart';
 import '../services/secure_card_storage.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/backup_password_dialog.dart';
-import '../widgets/bank_logo.dart';
 import '../widgets/card_attachments.dart';
-import '../widgets/card_network_logo.dart';
+import '../widgets/wallet_card_face.dart';
+import '../widgets/wallet_card_hero.dart';
 import '../widgets/card_background_surface.dart';
 import '../widgets/wallet_card.dart';
 import '../utils/card_contrast.dart';
@@ -53,6 +54,16 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
   String? _expiryDate;
   CardNetwork _network = CardNetwork.unknown;
   Timer? _hideSensitiveTimer;
+  int? _cardDragPointer;
+  Offset? _cardDragStart;
+  VelocityTracker? _cardDragVelocityTracker;
+  double _cardDragExtent = 0;
+  bool _isDraggingCard = false;
+  bool _isDismissingCard = false;
+
+  static const double _cardDragSlop = 10;
+  static const double _cardDismissDistance = 88;
+  static const double _cardDismissVelocity = 800;
 
   @override
   void initState() {
@@ -103,13 +114,16 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
     final fromNumber = CardNetworkUtils.detectNetwork(number);
     if (fromNumber == CardNetwork.unknown) return fromNumber;
 
-    final repaired = _card.copyWith(
-      cardType: CardNetworkUtils.getNetworkName(fromNumber),
-    );
-    if (repaired.id != null) {
+    final cardId = _card.id;
+    if (cardId != null) {
       try {
-        await _cardStorage.updateCard(repaired);
-        _card = repaired;
+        final repaired = await _cardStorage.updateCardById(
+          cardId,
+          (current) => current.copyWith(
+            cardType: CardNetworkUtils.getNetworkName(fromNumber),
+          ),
+        );
+        if (repaired != null) _card = repaired;
       } catch (e) {
         debugPrint('Could not persist repaired card type: $e');
       }
@@ -275,14 +289,103 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
     }
   }
 
-  Future<void> _editCard() async {
+  Future<void> _editCard({
+    CardEditInitialSection initialSection = CardEditInitialSection.cardDetails,
+  }) async {
     final result = await Navigator.push<CardData>(
       context,
-      MaterialPageRoute(builder: (context) => CardEditScreen(card: _card)),
+      MaterialPageRoute(
+        builder: (context) =>
+            CardEditScreen(card: _card, initialSection: initialSection),
+      ),
     );
     if (result != null && mounted) {
       setState(() => _card = result);
       Navigator.pop(context, true);
+    }
+  }
+
+  void _handleCardPointerDown(PointerDownEvent event) {
+    if (_cardDragPointer != null || _isDismissingCard) return;
+    _cardDragPointer = event.pointer;
+    _cardDragStart = event.position;
+    _cardDragVelocityTracker = VelocityTracker.withKind(event.kind)
+      ..addPosition(event.timeStamp, event.position);
+  }
+
+  void _handleCardPointerMove(PointerMoveEvent event) {
+    if (event.pointer != _cardDragPointer || _cardDragStart == null) return;
+    _cardDragVelocityTracker?.addPosition(event.timeStamp, event.position);
+
+    final delta = event.position - _cardDragStart!;
+    // Listening to pointer events instead of claiming the vertical gesture
+    // keeps upward drags available to the surrounding scroll view.
+    if (delta.dy <= _cardDragSlop || delta.dy < delta.dx.abs()) {
+      if (_isDraggingCard) _resetCardDrag();
+      return;
+    }
+
+    final extent = delta.dy - _cardDragSlop;
+    if ((_cardDragExtent - extent).abs() < 0.5) return;
+    setState(() {
+      _isDraggingCard = true;
+      _cardDragExtent = extent;
+    });
+  }
+
+  void _handleCardPointerUp(PointerUpEvent event) {
+    if (event.pointer != _cardDragPointer) return;
+    _cardDragVelocityTracker?.addPosition(event.timeStamp, event.position);
+    final velocity =
+        _cardDragVelocityTracker?.getVelocity().pixelsPerSecond.dy ?? 0;
+    final shouldDismiss =
+        _cardDragExtent >= _cardDismissDistance ||
+        (_cardDragExtent >= 24 && velocity >= _cardDismissVelocity);
+
+    _clearCardPointerTracking();
+    if (shouldDismiss) {
+      _dismissCardFromSwipe();
+    } else {
+      _settleCardBack();
+    }
+  }
+
+  void _handleCardPointerCancel(PointerCancelEvent event) {
+    if (event.pointer != _cardDragPointer) return;
+    _clearCardPointerTracking();
+    _settleCardBack();
+  }
+
+  void _clearCardPointerTracking() {
+    _cardDragPointer = null;
+    _cardDragStart = null;
+    _cardDragVelocityTracker = null;
+  }
+
+  void _resetCardDrag() {
+    if (!mounted || (!_isDraggingCard && _cardDragExtent == 0)) return;
+    setState(() {
+      _isDraggingCard = false;
+      _cardDragExtent = 0;
+    });
+  }
+
+  void _settleCardBack() {
+    if (!mounted) return;
+    setState(() {
+      _isDraggingCard = false;
+      _cardDragExtent = 0;
+    });
+  }
+
+  Future<void> _dismissCardFromSwipe() async {
+    if (_isDismissingCard || !mounted) return;
+    _isDismissingCard = true;
+    HapticFeedback.lightImpact();
+    final popped = await Navigator.of(context).maybePop();
+    if (!popped && mounted) {
+      _isDismissingCard = false;
+      _settleCardBack();
     }
   }
 
@@ -418,8 +521,6 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
         (_card.customBackgroundImagePath?.isNotEmpty == true
             ? CardContrast.ivory
             : CardContrast.bestForeground([primaryColor, secondaryColor]));
-    final subtleColor = CardContrast.secondary(textColor);
-    final faintColor = CardContrast.tertiary(textColor);
 
     final card = AspectRatio(
       aspectRatio: 1.586,
@@ -433,191 +534,52 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
         fallbackPrimaryColor: primaryColor,
         fallbackSecondaryColor: secondaryColor,
         borderRadius: BorderRadius.circular(20),
-        child: Stack(
-          children: [
-            _buildVerticalCategoryLabel(faintColor),
-            Positioned(
-              right: 18,
-              top: 0,
-              bottom: 0,
-              child: Center(
-                child: Icon(Icons.contactless, color: subtleColor, size: 34),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(25, 22, 12, 22),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: bank != null
-                              ? BankLogo(
-                                  bank: bank,
-                                  size: 30,
-                                  useSmall: false,
-                                  backgroundColor: primaryColor,
-                                  foregroundColor: textColor,
-                                  maxWidth: 150,
-                                )
-                              : const SizedBox.shrink(),
-                        ),
-                      ),
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: Text(
-                            _card.cardNickname ?? '',
-                            style: AppTypography.label(
-                              fontSize: 16,
-                              color: subtleColor,
-                            ),
-                            textAlign: TextAlign.right,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  Transform.translate(
-                    offset: const Offset(0, 12),
-                    child: Text(
-                      _card.maskedCardNumber,
-                      style: AppTypography.mono(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                        color: textColor,
-                        letterSpacing: 2,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      // Grouped in an Expanded row so the leftover width is
-                      // consumed here, keeping the network logo flush right.
-                      Expanded(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Flexible(
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  _cardholderName?.toUpperCase() ?? '—',
-                                  style: AppTypography.label(
-                                    fontSize: 14,
-                                    color: textColor,
-                                  ),
-                                  maxLines: 1,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 28),
-                            _buildCardFaceField(
-                              label: 'Valid\nthru',
-                              // Mirrors the reveal state below, so the card
-                              // face can never leak the expiry ahead of
-                              // authentication.
-                              value: _isExpiryVisible
-                                  ? (_expiryDate ?? '**/**')
-                                  : '**/**',
-                              labelColor: faintColor,
-                              valueColor: textColor,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      // Fixed box so a short logo (RuPay renders wide and flat)
-                      // can't shrink the row and drag the card number down.
-                      SizedBox(
-                        height: 64,
-                        child: Align(
-                          alignment: Alignment.bottomRight,
-                          widthFactor: 1,
-                          // Square network SVGs centre their artwork, leaving
-                          // dead space below the mark; RuPay is tightly cropped.
-                          child: Transform.translate(
-                            offset: Offset(
-                              0,
-                              _network == CardNetwork.rupay ? 0 : 16,
-                            ),
-                            child: CardNetworkLogo(
-                              cardNumber: '',
-                              forceNetwork: _network,
-                              height: 64,
-                              maxWidth: 100,
-                              isInputField: false,
-                              backgroundColor: primaryColor,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
+        child: WalletCardFace(
+          bank: bank,
+          network: _network,
+          categoryName: _card.categoryName,
+          nickname: _card.cardNickname ?? '',
+          cardNumber: _card.maskedCardNumber,
+          cardholderName: _cardholderName ?? '—',
+          // Mirrors the reveal state below, so the card face can never leak
+          // the expiry date ahead of authentication.
+          expiryDate: _isExpiryVisible
+              ? (_expiryDate ?? CardData.hiddenExpiryDate)
+              : CardData.hiddenExpiryDate,
+          backgroundColor: primaryColor,
+          foregroundColor: textColor,
         ),
       ),
     );
 
-    if (_card.id == null || AppMotion.reduceMotion(context)) return card;
-    return Hero(tag: 'wallet-card-${_card.id}', child: card);
-  }
+    final cardWithHero = _card.id == null || AppMotion.reduceMotion(context)
+        ? card
+        : WalletCardHero(tag: 'wallet-card-${_card.id}', child: card);
+    final dragProgress = (_cardDragExtent / 360).clamp(0.0, 1.0);
 
-  Widget _buildVerticalCategoryLabel(Color color) {
-    return Positioned(
-      left: 4,
-      bottom: 22,
-      child: RotatedBox(
-        quarterTurns: 3,
-        child: Text(
-          '${_card.categoryName} Card'.toUpperCase(),
-          style: AppTypography.overline(
-            fontSize: 9,
-            color: color,
-          ).copyWith(fontWeight: FontWeight.w600, letterSpacing: 1.5),
-        ),
+    return Listener(
+      key: const ValueKey('card-detail-swipe-target'),
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: _handleCardPointerDown,
+      onPointerMove: _handleCardPointerMove,
+      onPointerUp: _handleCardPointerUp,
+      onPointerCancel: _handleCardPointerCancel,
+      child: AnimatedContainer(
+        duration: _isDraggingCard
+            ? Duration.zero
+            : AppMotion.resolve(context, AppMotion.quick),
+        curve: AppMotion.standardCurve,
+        transformAlignment: Alignment.center,
+        transform: Matrix4.identity()
+          ..translateByDouble(0, _cardDragExtent, 0, 1)
+          ..scaleByDouble(
+            1 - (0.035 * dragProgress),
+            1 - (0.035 * dragProgress),
+            1,
+            1,
+          ),
+        child: cardWithHero,
       ),
-    );
-  }
-
-  Widget _buildCardFaceField({
-    required String label,
-    required String value,
-    required Color labelColor,
-    required Color valueColor,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label.toUpperCase(),
-          style: AppTypography.overline(
-            fontSize: 8,
-            color: labelColor,
-          ).copyWith(height: 1.2),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          value,
-          style: AppTypography.label(fontSize: 12, color: valueColor),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
     );
   }
 
@@ -627,9 +589,11 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Card Details',
-          style: AppTypography.appBarTitle(
+        _buildEditableSectionHeader(
+          title: 'Card Details',
+          iconKey: const ValueKey('edit-card-details'),
+          onEdit: () => _editCard(),
+          textStyle: AppTypography.appBarTitle(
             color: themeProvider.getPrimaryTextColor(),
           ),
         ),
@@ -646,43 +610,27 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
             onToggle: _toggleCardNumberVisibility,
             onCopy: _copyCardNumber,
           ),
-          const Divider(height: 24),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _buildCompactSecretField(
-                  icon: Icons.calendar_today,
-                  label: 'Expiry Date',
-                  value: _isExpiryVisible ? null : '**/**',
-                  futureValue: _isExpiryVisible
-                      ? _card.getDecryptedExpiryDate()
-                      : null,
-                  isVisible: _isExpiryVisible,
-                  onToggle: _toggleExpiryVisibility,
-                  onCopy: _copyExpiry,
-                ),
-              ),
-              Container(
-                width: 1,
-                height: 44,
-                margin: const EdgeInsets.symmetric(horizontal: 12),
-                color: themeProvider.getSecondaryTextColor().withValues(
-                  alpha: 0.15,
-                ),
-              ),
-              Expanded(
-                child: _buildCompactSecretField(
-                  icon: Icons.lock_outline,
-                  label: 'CVV',
-                  value: _isCvvVisible ? null : '***',
-                  futureValue: _isCvvVisible ? _card.getDecryptedCvv() : null,
-                  isVisible: _isCvvVisible,
-                  onToggle: _toggleCvvVisibility,
-                  onCopy: _copyCvv,
-                ),
-              ),
-            ],
+          const Divider(height: 1),
+          _buildDetailRow(
+            icon: Icons.calendar_today,
+            label: 'Expiry Date',
+            value: _isExpiryVisible ? null : CardData.hiddenExpiryDate,
+            futureValue: _isExpiryVisible
+                ? _card.getDecryptedExpiryDate()
+                : null,
+            isVisible: _isExpiryVisible,
+            onToggle: _toggleExpiryVisibility,
+            onCopy: _copyExpiry,
+          ),
+          const Divider(height: 1),
+          _buildDetailRow(
+            icon: Icons.lock_outline,
+            label: 'Security code',
+            value: _isCvvVisible ? null : CardData.hiddenCvv,
+            futureValue: _isCvvVisible ? _card.getDecryptedCvv() : null,
+            isVisible: _isCvvVisible,
+            onToggle: _toggleCvvVisibility,
+            onCopy: _copyCvv,
           ),
         ]),
         _buildAdditionalInfoSection(),
@@ -710,9 +658,13 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 16),
-            Text(
-              'Additional Information',
-              style: AppTypography.sectionTitle(
+            _buildEditableSectionHeader(
+              title: 'Additional Information',
+              iconKey: const ValueKey('edit-additional-information'),
+              onEdit: () => _editCard(
+                initialSection: CardEditInitialSection.additionalInformation,
+              ),
+              textStyle: AppTypography.sectionTitle(
                 color: themeProvider.getPrimaryTextColor(),
               ),
             ),
@@ -755,6 +707,29 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildEditableSectionHeader({
+    required String title,
+    required Key iconKey,
+    required TextStyle textStyle,
+    required VoidCallback onEdit,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(title, style: textStyle),
+        const SizedBox(width: 4),
+        IconButton(
+          key: iconKey,
+          tooltip: 'Edit card',
+          visualDensity: VisualDensity.compact,
+          iconSize: 19,
+          onPressed: onEdit,
+          icon: const Icon(Icons.edit_outlined),
+        ),
+      ],
     );
   }
 
@@ -838,130 +813,73 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
     required VoidCallback onCopy,
   }) {
     final themeProvider = context.watch<ThemeProvider>();
+    final scheme = Theme.of(context).colorScheme;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 14, color: themeProvider.getSecondaryTextColor()),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: AppTypography.caption(
-                color: themeProvider.getSecondaryTextColor(),
-              ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12),
             ),
-          ],
-        ),
-        const SizedBox(height: 2),
-        Row(
-          children: [
-            Expanded(
-              child: AnimatedSwitcher(
-                duration: AppMotion.resolve(context, AppMotion.quick),
-                child: futureValue != null
-                    ? FutureBuilder<String?>(
-                        key: ValueKey('visible-$label'),
-                        future: futureValue,
-                        builder: (context, snapshot) => Text(
-                          snapshot.data ?? '…',
+            child: Icon(
+              icon,
+              size: 20,
+              color: themeProvider.getSecondaryTextColor(),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: AppTypography.caption(
+                    color: themeProvider.getSecondaryTextColor(),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                AnimatedSwitcher(
+                  duration: AppMotion.resolve(context, AppMotion.quick),
+                  child: futureValue != null
+                      ? FutureBuilder<String?>(
+                          key: ValueKey('visible-$label'),
+                          future: futureValue,
+                          builder: (context, snapshot) => Text(
+                            snapshot.data ?? '…',
+                            style: AppTypography.title(
+                              color: themeProvider.getPrimaryTextColor(),
+                            ),
+                          ),
+                        )
+                      : Text(
+                          value ?? '',
+                          key: ValueKey('hidden-$label'),
                           style: AppTypography.title(
                             color: themeProvider.getPrimaryTextColor(),
                           ),
                         ),
-                      )
-                    : Text(
-                        value ?? '',
-                        key: ValueKey('hidden-$label'),
-                        style: AppTypography.title(
-                          color: themeProvider.getPrimaryTextColor(),
-                        ),
-                      ),
-              ),
+                ),
+              ],
             ),
-            _buildCompactIconButton(
-              icon: isVisible ? Icons.visibility_off : Icons.visibility,
-              tooltip: isVisible ? 'Hide' : 'Show',
-              onPressed: onToggle,
-            ),
-            _buildCompactIconButton(
-              icon: Icons.copy,
-              tooltip: 'Copy',
-              onPressed: onCopy,
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  /// Narrow variant of [_buildDetailRow] so two secret fields fit on one line.
-  Widget _buildCompactSecretField({
-    required IconData icon,
-    required String label,
-    String? value,
-    Future<String?>? futureValue,
-    required bool isVisible,
-    required VoidCallback onToggle,
-    required VoidCallback onCopy,
-  }) {
-    final themeProvider = context.watch<ThemeProvider>();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 14, color: themeProvider.getSecondaryTextColor()),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: AppTypography.caption(
-                color: themeProvider.getSecondaryTextColor(),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 2),
-        Row(
-          children: [
-            Expanded(
-              child: AnimatedSwitcher(
-                duration: AppMotion.resolve(context, AppMotion.quick),
-                child: futureValue != null
-                    ? FutureBuilder<String?>(
-                        key: ValueKey('visible-$label'),
-                        future: futureValue,
-                        builder: (context, snapshot) => Text(
-                          snapshot.data ?? '…',
-                          style: AppTypography.title(
-                            color: themeProvider.getPrimaryTextColor(),
-                          ),
-                        ),
-                      )
-                    : Text(
-                        value ?? '',
-                        key: ValueKey('hidden-$label'),
-                        style: AppTypography.title(
-                          color: themeProvider.getPrimaryTextColor(),
-                        ),
-                      ),
-              ),
-            ),
-            _buildCompactIconButton(
-              icon: isVisible ? Icons.visibility_off : Icons.visibility,
-              tooltip: isVisible ? 'Hide' : 'Show',
-              onPressed: onToggle,
-            ),
-            _buildCompactIconButton(
-              icon: Icons.copy,
-              tooltip: 'Copy',
-              onPressed: onCopy,
-            ),
-          ],
-        ),
-      ],
+          ),
+          _buildCompactIconButton(
+            icon: isVisible ? Icons.visibility_off : Icons.visibility,
+            tooltip: isVisible ? 'Hide' : 'Show',
+            onPressed: onToggle,
+          ),
+          _buildCompactIconButton(
+            icon: Icons.copy,
+            tooltip: 'Copy',
+            onPressed: onCopy,
+          ),
+        ],
+      ),
     );
   }
 

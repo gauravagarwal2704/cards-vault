@@ -7,7 +7,9 @@ import '../theme/app_typography.dart';
 import '../theme/app_colors.dart';
 
 class AiScanLogsScreen extends StatefulWidget {
-  const AiScanLogsScreen({super.key});
+  const AiScanLogsScreen({super.key, this.logLoader});
+
+  final Future<List<AiScanLogEntry>> Function()? logLoader;
 
   @override
   State<AiScanLogsScreen> createState() => _AiScanLogsScreenState();
@@ -25,7 +27,7 @@ class _AiScanLogsScreenState extends State<AiScanLogsScreen> {
   }
 
   Future<void> _load() async {
-    final logs = await _logService.load();
+    final logs = await (widget.logLoader?.call() ?? _logService.load());
     if (!mounted) return;
     setState(() {
       _logs = logs;
@@ -63,79 +65,77 @@ class _AiScanLogsScreenState extends State<AiScanLogsScreen> {
     setState(() => _logs = const []);
   }
 
-  Future<void> _showLog(AiScanLogEntry entry) async {
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        icon: const Icon(Icons.receipt_long_outlined),
-        title: Text('${entry.provider.label} scan log'),
-        content: SizedBox(
-          width: 600,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${entry.model} · ${_formatDate(entry.createdAt)}',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 4),
-                SelectableText(entry.endpoint),
-                const SizedBox(height: 4),
-                Text(
-                  entry.httpStatus == null
-                      ? 'No HTTP status · ${entry.message}'
-                      : 'HTTP ${entry.httpStatus} · ${entry.message}',
-                ),
-                const SizedBox(height: 18),
-                const Text(
-                  'Request summary',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 6),
-                Text(entry.requestSummary),
-                const SizedBox(height: 14),
-                const Text(
-                  'Request body (image data omitted)',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 6),
-                _codeBlock(dialogContext, entry.requestBody),
-                if (entry.validationSummary != null) ...[
-                  const SizedBox(height: 18),
-                  const Text(
-                    'CardVault validation',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(entry.validationSummary!),
-                ],
-                const SizedBox(height: 18),
-                const Text(
-                  'Provider response',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'May contain the full card number. API credentials are redacted.',
-                ),
-                const SizedBox(height: 8),
-                _codeBlock(dialogContext, entry.responseBody),
-              ],
-            ),
+  Widget _logDetails(AiScanLogEntry entry) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+          Text(
+            entry.model,
+            style: const TextStyle(fontWeight: FontWeight.w700),
           ),
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Done'),
+          const SizedBox(height: 4),
+          SelectableText(
+            entry.endpoint,
+            key: PageStorageKey('${entry.id}-endpoint'),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            entry.httpStatus == null
+                ? 'No HTTP status · ${entry.message}'
+                : 'HTTP ${entry.httpStatus} · ${entry.message}',
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            'Request summary',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 6),
+          Text(entry.requestSummary),
+          const SizedBox(height: 14),
+          const Text(
+            'Request body (image data omitted)',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 6),
+          _codeBlock(
+            context,
+            entry.requestBody,
+            key: PageStorageKey('${entry.id}-request'),
+          ),
+          if (entry.validationSummary != null) ...[
+            const SizedBox(height: 18),
+            const Text(
+              'CardVault validation',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            Text(entry.validationSummary!),
+          ],
+          const SizedBox(height: 18),
+          const Text(
+            'Provider response',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'May contain the full card number. API credentials are redacted.',
+          ),
+          const SizedBox(height: 8),
+          _codeBlock(
+            context,
+            entry.responseBody,
+            key: PageStorageKey('${entry.id}-response'),
           ),
         ],
       ),
     );
   }
 
-  Widget _codeBlock(BuildContext context, String text) {
+  Widget _codeBlock(BuildContext context, String text, {required Key key}) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
@@ -145,6 +145,7 @@ class _AiScanLogsScreenState extends State<AiScanLogsScreen> {
       ),
       child: SelectableText(
         text,
+        key: key,
         style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
       ),
     );
@@ -228,8 +229,8 @@ class _AiScanLogsScreenState extends State<AiScanLogsScreen> {
                     side: BorderSide(color: theme.getOutlineColor()),
                   ),
                   clipBehavior: Clip.antiAlias,
-                  child: ListTile(
-                    onTap: () => _showLog(entry),
+                  child: ExpansionTile(
+                    key: PageStorageKey(entry.id),
                     leading: CircleAvatar(
                       backgroundColor: statusColor.withValues(alpha: 0.12),
                       child: Icon(
@@ -250,8 +251,7 @@ class _AiScanLogsScreenState extends State<AiScanLogsScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.caption(color: secondary),
                     ),
-                    isThreeLine: true,
-                    trailing: Icon(Icons.chevron_right, color: secondary),
+                    children: [_logDetails(entry)],
                   ),
                 );
               },

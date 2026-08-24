@@ -14,7 +14,9 @@ class CardGroupStorage {
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
     aOptions: AndroidOptions(
       encryptedSharedPreferences: true,
-      resetOnError: true,
+      // Groups share the same secure-storage namespace as cards. Never allow a
+      // transient group read error to reset the entire wallet.
+      resetOnError: false,
     ),
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
   );

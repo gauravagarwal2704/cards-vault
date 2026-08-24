@@ -20,6 +20,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   Color _seedColor = config.AccentColorOption.indigo.seedColor;
   String? _accentId = config.AccentColorOption.indigo.id;
   Brightness _platformBrightness = Brightness.light;
+  bool _isInitialized = false;
 
   ThemeData _lightTheme = AppTheme.build(
     brightnessMode: config.AppBrightnessMode.light,
@@ -51,6 +52,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   String? get accentId => _accentId;
   bool get isCustomColor => _colorSource == config.AppColorSource.custom;
   bool get usesSystemColors => _colorSource == config.AppColorSource.system;
+  bool get isInitialized => _isInitialized;
 
   ThemeData get lightTheme => _lightTheme;
   ThemeData get darkTheme => _darkTheme;
@@ -162,9 +164,11 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       }
 
       _rebuildThemes();
-      notifyListeners();
     } catch (error) {
       debugPrint('Error loading theme: $error');
+    } finally {
+      _isInitialized = true;
+      notifyListeners();
     }
   }
 

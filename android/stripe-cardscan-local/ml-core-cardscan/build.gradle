@@ -1,0 +1,21 @@
+plugins {
+    id "com.android.library"
+    id "org.jetbrains.kotlin.android"
+}
+
+android {
+    namespace = "com.stripe.android.mlcore.impl"
+    compileSdk = 36
+
+    defaultConfig {
+        minSdk = 26
+    }
+}
+
+dependencies {
+    api project(":stripe-cardscan-ml-core-base")
+    implementation "androidx.annotation:annotation:1.9.1"
+    // Standalone, app-bundled LiteRT. This is not the Google Play Services
+    // runtime (whose coordinates begin with com.google.android.gms).
+    implementation "com.google.ai.edge.litert:litert:1.4.0"
+}

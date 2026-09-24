@@ -7,11 +7,31 @@ import '../theme/app_typography.dart';
 class PrivacyPolicyScreen extends StatelessWidget {
   const PrivacyPolicyScreen({super.key});
 
+  static final Uri publishedPolicyUri = Uri.parse(
+    'https://gauravagarwal2704.github.io/cards-vault/privacy-policy.html',
+  );
+
   static final Uri contactUri = Uri(
     scheme: 'mailto',
     path: 'agarwalgaurav.apps@gmail.com',
     queryParameters: const {'subject': 'CardVault privacy enquiry'},
   );
+
+  Future<void> _openPublishedPolicy(BuildContext context) async {
+    try {
+      final opened = await launchUrl(
+        publishedPolicyUri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (opened || !context.mounted) return;
+    } catch (_) {
+      if (!context.mounted) return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Could not open the published policy.')),
+    );
+  }
 
   Future<void> _contactDeveloper(BuildContext context) async {
     final opened = await launchUrl(contactUri);
@@ -53,6 +73,13 @@ class PrivacyPolicyScreen extends StatelessWidget {
                       style: AppTypography.caption(
                         color: scheme.onSurfaceVariant,
                       ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    TextButton.icon(
+                      key: const ValueKey('published-privacy-policy-link'),
+                      onPressed: () => _openPublishedPolicy(context),
+                      icon: const Icon(Icons.open_in_new),
+                      label: const Text('View published privacy policy'),
                     ),
                     const SizedBox(height: AppSpacing.xl),
                     const _PolicySection(

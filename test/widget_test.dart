@@ -536,7 +536,10 @@ void main() {
       lessThan(tester.getTopLeft(find.text('Profile')).dy),
     );
     expect(find.byKey(const ValueKey('privacy-policy-link')), findsOneWidget);
-    expect(find.text('How CardVault handles your data'), findsOneWidget);
+    expect(
+      find.text('gauravagarwal2704.github.io/cards-vault/privacy-policy.html'),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey('open-source-licenses-link')),
       findsOneWidget,

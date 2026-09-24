@@ -1228,7 +1228,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             key: const ValueKey('privacy-policy-link'),
             icon: Icons.privacy_tip_outlined,
             title: 'Privacy policy',
-            subtitle: 'How CardVault handles your data',
+            subtitle:
+                'gauravagarwal2704.github.io/cards-vault/privacy-policy.html',
             trailingIcon: Icons.chevron_right,
             onTap: _showPrivacyPolicy,
           ),

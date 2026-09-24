@@ -63,7 +63,7 @@ dependencies:
   
   # OCR and Camera functionality
   image_picker: 1.2.3
-  image: 4.3.0
+  image: 4.10.1
   camera: 0.10.6
   image_cropper: 11.0.0
 
@@ -71,7 +71,7 @@ dependencies:
   app_settings: 5.2.0
 
   # Zip bundling for backups that include card photos
-  archive: 3.6.1
+  archive: 4.3.0
 
 dev_dependencies:
   flutter_test:

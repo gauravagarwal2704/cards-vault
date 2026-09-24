@@ -65,7 +65,7 @@ dependencies:
   image_picker: 1.2.3
   image: 4.3.0
   camera: 0.10.6
-  image_cropper: 11.0.0
+  image_cropper: 12.2.1
 
   # Deep links into system settings (NFC, app permissions)
   app_settings: 5.2.0

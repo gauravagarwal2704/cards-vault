@@ -43,11 +43,11 @@ dependencies {
     implementation project(":stripe-cardscan-camera-core")
     implementation project(":stripe-cardscan-ml-core-cardscan")
     implementation "androidx.annotation:annotation:1.9.1"
-    implementation "androidx.appcompat:appcompat:1.7.0"
-    implementation "androidx.constraintlayout:constraintlayout:2.2.0"
+    implementation "androidx.appcompat:appcompat:1.8.0"
+    implementation "androidx.constraintlayout:constraintlayout:2.2.2"
     implementation "androidx.core:core-ktx:1.13.1"
     implementation "androidx.lifecycle:lifecycle-runtime-ktx:2.8.7"
-    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0"
 
     androidTestImplementation "androidx.test:runner:1.7.0"
     androidTestImplementation "androidx.test.ext:junit:1.3.0"

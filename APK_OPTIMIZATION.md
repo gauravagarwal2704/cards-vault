@@ -50,19 +50,17 @@ buildTypes {
 ## Native Libraries in Optimized APK
 - libflutter.so: 37.8MB
 - libdigitalink.so: 10.8MB
-- libmlkit_google_ocr_pipeline.so: 10.6MB
 - libtesseract.so: 4.7MB
-- libtensorflowlite_jni.so: 3.7MB
-- libtensorflowlite_gpu_jni.so: 3.4MB
 - libleptonica.so: 2.7MB
 - libjpeg.so: 0.2MB
 - libpngx.so: 0.2MB
 
-**Total Native Libs**: 74MB (only arm64-v8a)
+The card scanner no longer packages ML Kit, Google Play Services, or
+TensorFlow Lite. Verify current size from a fresh release APK rather than the
+historical totals above.
 
 ## Notes
 - Release builds remain unaffected
 - If testing on older devices (32-bit), temporarily add 'armeabi-v7a' to abiFilters
 - For x86 emulators, add 'x86_64' to abiFilters
 - Most modern Android devices (2017+) use arm64-v8a
-

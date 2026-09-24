@@ -22,8 +22,7 @@ Future<bool> ensureNfcReady(BuildContext context) async {
     await _showMessage(
       context,
       title: 'NFC Not Supported',
-      message:
-          'Reading cards over NFC is not supported on iPhone. Use Scan Card or Add Manually instead.',
+      message: 'Reading cards over NFC is not supported on iPhone. Use Scan Card or Add Manually instead.',
     );
     return false;
   }
@@ -40,17 +39,15 @@ Future<bool> ensureNfcReady(BuildContext context) async {
         title: 'NFC Is Turned Off',
         message:
             'Turn on NFC in your device settings to scan a card by tapping it.',
-        onOpenSettings: () => AppSettings.openAppSettings(
-          type: AppSettingsType.nfc,
-        ),
+        onOpenSettings: () =>
+            AppSettings.openAppSettings(type: AppSettingsType.nfc),
       );
       return false;
     case NFCAvailability.not_supported:
       await _showMessage(
         context,
         title: 'NFC Not Supported',
-        message:
-            'This device does not have NFC hardware. Use Scan Card or Add Manually instead.',
+        message: 'This device does not have NFC hardware. Use Scan Card or Add Manually instead.',
       );
       return false;
   }
@@ -87,9 +84,7 @@ Future<void> _showMessage(
       ),
       content: Text(
         message,
-        style: AppTypography.body(
-          color: themeProvider.getSecondaryTextColor(),
-        ),
+        style: AppTypography.body(color: themeProvider.getSecondaryTextColor()),
       ),
       actions: [
         TextButton(

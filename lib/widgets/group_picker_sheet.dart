@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../models/card_group.dart';
 import '../providers/theme_provider.dart';
 import '../services/card_group_storage.dart';
@@ -24,49 +25,131 @@ Future<GroupSelection?> showGroupPickerSheet(
   );
 }
 
-/// Asks for a group name. Returns null when dismissed, so callers can tell a
-/// cancel apart from an empty name.
-Future<String?> showGroupNameDialog(
+/// Asks for a group name in a keyboard-aware bottom sheet. Returns null when
+/// dismissed, so callers can tell a cancel apart from an empty name.
+Future<String?> showGroupNameSheet(
   BuildContext context, {
   required String title,
   String? initialValue,
 }) {
-  final controller = TextEditingController(text: initialValue);
-  final themeProvider = context.read<ThemeProvider>();
-
-  return showDialog<String>(
+  return showModalBottomSheet<String>(
     context: context,
-    builder: (context) => AlertDialog(
-      backgroundColor: themeProvider.getCardColor(),
-      title: Text(
-        title,
-        style: AppTypography.dialogTitle(
-          color: themeProvider.getPrimaryTextColor(),
-        ),
-      ),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        textCapitalization: TextCapitalization.words,
-        style: AppTypography.body(color: themeProvider.getPrimaryTextColor()),
-        decoration: const InputDecoration(
-          labelText: 'Group name',
-          hintText: 'e.g. Axis Bank',
-        ),
-        onSubmitted: (value) => Navigator.pop(context, value.trim()),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, controller.text.trim()),
-          child: const Text('Save'),
-        ),
-      ],
-    ),
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (context) =>
+        _GroupNameSheet(title: title, initialValue: initialValue),
   );
+}
+
+class _GroupNameSheet extends StatefulWidget {
+  final String title;
+  final String? initialValue;
+
+  const _GroupNameSheet({required this.title, this.initialValue});
+
+  @override
+  State<_GroupNameSheet> createState() => _GroupNameSheetState();
+}
+
+class _GroupNameSheetState extends State<_GroupNameSheet> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialValue,
+  );
+
+  bool get _canSave => _controller.text.trim().isNotEmpty;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final name = _controller.text.trim();
+    if (name.isNotEmpty) Navigator.pop(context, name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final themeProvider = context.watch<ThemeProvider>();
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: Container(
+        decoration: BoxDecoration(
+          color: themeProvider.getCardColor(),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: themeProvider.getSecondaryTextColor().withValues(
+                        alpha: 0.35,
+                      ),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  widget.title,
+                  style: AppTypography.dialogTitle(
+                    color: themeProvider.getPrimaryTextColor(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  key: const ValueKey('group-name-field'),
+                  controller: _controller,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.done,
+                  style: AppTypography.body(
+                    color: themeProvider.getPrimaryTextColor(),
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Group name',
+                    hintText: 'e.g. Airport lounge',
+                  ),
+                  onChanged: (_) => setState(() {}),
+                  onSubmitted: (_) => _save(),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        key: const ValueKey('save-group-name'),
+                        onPressed: _canSave ? _save : null,
+                        child: const Text('Save'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _GroupPickerSheet extends StatefulWidget {
@@ -99,7 +182,7 @@ class _GroupPickerSheetState extends State<_GroupPickerSheet> {
   }
 
   Future<void> _createGroup() async {
-    final name = await showGroupNameDialog(context, title: 'New Group');
+    final name = await showGroupNameSheet(context, title: 'New Group');
     if (name == null || name.isEmpty) return;
 
     final group = await _groupStorage.createGroup(name);
@@ -108,7 +191,7 @@ class _GroupPickerSheetState extends State<_GroupPickerSheet> {
   }
 
   Future<void> _renameGroup(CardGroup group) async {
-    final name = await showGroupNameDialog(
+    final name = await showGroupNameSheet(
       context,
       title: 'Rename Group',
       initialValue: group.name,
@@ -144,7 +227,10 @@ class _GroupPickerSheetState extends State<_GroupPickerSheet> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
           ),
         ],
       ),
@@ -320,7 +406,7 @@ class GroupSelectorField extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isDark
-                ? Colors.white.withOpacity(0.2)
+                ? Colors.white.withValues(alpha: 0.2)
                 : const Color(0xFFD1D5DB),
             width: 1.5,
           ),

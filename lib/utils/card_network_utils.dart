@@ -3,19 +3,19 @@ import '../widgets/wallet_card.dart';
 class CardNetworkUtils {
   static CardNetwork detectNetwork(String cardNumber) {
     final cleaned = cardNumber.replaceAll(RegExp(r'[\s\-]'), '');
-    
+
     if (cleaned.isEmpty) return CardNetwork.unknown;
-    
+
     // American Express: starts with 34 or 37
     if (cleaned.startsWith('34') || cleaned.startsWith('37')) {
       return CardNetwork.amex;
     }
-    
+
     // Visa: starts with 4
     if (cleaned.startsWith('4')) {
       return CardNetwork.visa;
     }
-    
+
     // Mastercard: starts with 51-55 or 2221-2720
     if (cleaned.length >= 2) {
       final firstTwo = int.tryParse(cleaned.substring(0, 2)) ?? 0;
@@ -29,7 +29,7 @@ class CardNetworkUtils {
         return CardNetwork.mastercard;
       }
     }
-    
+
     // Discover: 6011 is checked ahead of RuPay's broader 60 prefix.
     if (cleaned.startsWith('6011')) {
       return CardNetwork.discover;
@@ -48,13 +48,13 @@ class CardNetworkUtils {
 
     // Discover: 622126-622925, 644-649, 65
     if (cleaned.startsWith('65') ||
-        (cleaned.length >= 3 && 
-         int.tryParse(cleaned.substring(0, 3)) != null &&
-         int.parse(cleaned.substring(0, 3)) >= 644 &&
-         int.parse(cleaned.substring(0, 3)) <= 649)) {
+        (cleaned.length >= 3 &&
+            int.tryParse(cleaned.substring(0, 3)) != null &&
+            int.parse(cleaned.substring(0, 3)) >= 644 &&
+            int.parse(cleaned.substring(0, 3)) <= 649)) {
       return CardNetwork.discover;
     }
-    
+
     // JCB: starts with 3528-3589
     if (cleaned.length >= 4) {
       final firstFour = int.tryParse(cleaned.substring(0, 4)) ?? 0;
@@ -62,7 +62,7 @@ class CardNetworkUtils {
         return CardNetwork.jcb;
       }
     }
-    
+
     // Diners Club: starts with 36, 38, or 300-305
     if (cleaned.startsWith('36') || cleaned.startsWith('38')) {
       return CardNetwork.dinersClub;
@@ -73,23 +73,33 @@ class CardNetworkUtils {
         return CardNetwork.dinersClub;
       }
     }
-    
+
     // UnionPay: starts with 62
     if (cleaned.startsWith('62')) {
       return CardNetwork.unionPay;
     }
-    
+
     // Maestro: 5018, 5020, 5038, 5893, 6304, 6759, 6761, 6762, 6763
     if (cleaned.length >= 4) {
       final firstFour = cleaned.substring(0, 4);
-      if (['5018', '5020', '5038', '5893', '6304', '6759', '6761', '6762', '6763'].contains(firstFour)) {
+      if ([
+        '5018',
+        '5020',
+        '5038',
+        '5893',
+        '6304',
+        '6759',
+        '6761',
+        '6762',
+        '6763',
+      ].contains(firstFour)) {
         return CardNetwork.maestro;
       }
     }
-    
+
     return CardNetwork.unknown;
   }
-  
+
   /// Maps a stored `cardType` string back onto a network. Used where only the
   /// card type is available and the number itself is still encrypted.
   ///
@@ -159,7 +169,7 @@ class CardNetworkUtils {
 
   static String formatCardNumber(String cardNumber, CardNetwork network) {
     final cleaned = cardNumber.replaceAll(RegExp(r'[\s\-]'), '');
-    
+
     if (network == CardNetwork.amex) {
       // AMEX format: 4-6-5
       if (cleaned.length <= 4) return cleaned;
@@ -206,4 +216,3 @@ class CardNetworkUtils {
     return network == CardNetwork.amex ? '4-6-5' : '4-4-4-4';
   }
 }
-

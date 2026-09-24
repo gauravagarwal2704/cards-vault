@@ -24,6 +24,38 @@ plugins {
 }
 
 include ":app"
+include ":stripe-cardscan-camera-core"
+include ":stripe-cardscan-ml-core-base"
+include ":stripe-cardscan-ml-core-cardscan"
+include ":stripe-cardscan-local"
+
+def cardScanProvenanceFile = file("stripe-cardscan-local/UPSTREAM.properties")
+assert cardScanProvenanceFile.exists():
+        "Missing vendored CardScan provenance: ${cardScanProvenanceFile}"
+def cardScanProvenance = new Properties()
+cardScanProvenanceFile.withInputStream { cardScanProvenance.load(it) }
+[
+    "upstreamRepository",
+    "upstreamTag",
+    "upstreamTagObject",
+    "upstreamCommit",
+    "forkRevision",
+    "lastReviewed",
+    "reviewCadenceDays",
+].each { key ->
+    assert cardScanProvenance.getProperty(key)?.trim():
+            "Missing ${key} in ${cardScanProvenanceFile}"
+}
+assert cardScanProvenance.getProperty("upstreamCommit") ==~ /[0-9a-f]{40}/:
+        "CardScan upstreamCommit must be a full Git commit SHA"
+
+gradle.ext.cardScanUpstreamTag = cardScanProvenance.getProperty("upstreamTag")
+gradle.ext.cardScanForkRevision = cardScanProvenance.getProperty("forkRevision")
+
+project(":stripe-cardscan-camera-core").projectDir = file("stripe-cardscan-local/camera-core")
+project(":stripe-cardscan-ml-core-base").projectDir = file("stripe-cardscan-local/ml-core-base")
+project(":stripe-cardscan-ml-core-cardscan").projectDir = file("stripe-cardscan-local/ml-core-cardscan")
+project(":stripe-cardscan-local").projectDir = file("stripe-cardscan-local/stripecardscan")
 
 gradle.beforeProject { project ->
     def aliasJcenter = { handler ->

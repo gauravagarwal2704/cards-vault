@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import 'card_network_logo.dart';
 import 'bank_logo.dart';
 import '../models/card_data.dart';
 import '../data/banks.dart';
+import '../data/card_designs.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_typography.dart';
+import '../utils/card_contrast.dart';
+import 'card_background_surface.dart';
 
 enum CardNetwork {
   visa,
@@ -61,44 +65,53 @@ class WalletCard extends StatelessWidget {
     this.cardholderName,
     this.isFocused = false,
     this.onTap,
-  }) : assert(data != null || cardData != null, 'Either data or cardData must be provided');
+  }) : assert(
+         data != null || cardData != null,
+         'Either data or cardData must be provided',
+       );
 
   @override
   Widget build(BuildContext context) {
     final primaryColor = _getPrimaryColor(context);
     final secondaryColor = _getSecondaryColor(context);
-    
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [primaryColor, secondaryColor],
-          ),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(isFocused ? 0.25 : 0.12),
-              blurRadius: isFocused ? 30 : 15,
-              spreadRadius: 0,
-              offset: const Offset(0, 12),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          clipBehavior: Clip.hardEdge,
-          child: AspectRatio(
-            aspectRatio: 1.586,
+    final design = cardData?.designId == null
+        ? null
+        : CardDesigns.getById(cardData!.designId!);
+    final foregroundColor =
+        design?.foregroundColor ??
+        (cardData?.customBackgroundImagePath?.isNotEmpty == true
+            ? CardContrast.ivory
+            : CardContrast.bestForeground([primaryColor, secondaryColor]));
+
+    return Semantics(
+      button: onTap != null,
+      label: cardData == null
+          ? 'Payment card'
+          : '${cardData!.categoryName} card ending ${cardData!.lastFourDigits}',
+      child: GestureDetector(
+        onTap: onTap,
+        child: AspectRatio(
+          aspectRatio: 1.586,
+          child: CardBackgroundSurface(
+            design: design,
+            customGradientStartColor: cardData?.customGradientStartColor,
+            customGradientEndColor: cardData?.customGradientEndColor,
+            customGradientAngle: cardData?.customGradientAngle ?? 135,
+            customBackgroundImagePath: cardData?.customBackgroundImagePath,
+            backgroundImageBlur: cardData?.backgroundImageBlur ?? 0,
+            fallbackPrimaryColor: primaryColor,
+            fallbackSecondaryColor: secondaryColor,
+            borderRadius: BorderRadius.circular(16),
             child: Stack(
               children: [
-                if (_shouldShowMastercardCircles()) _buildMastercardCircles(),
-                _buildCardContent(),
+                if (_shouldShowMastercardCircles() &&
+                    design == null &&
+                    cardData?.customGradientStartColor == null &&
+                    cardData?.customBackgroundImagePath == null)
+                  _buildMastercardCircles(),
+                _buildCardContent(foregroundColor),
                 _buildNetworkLogo(),
-                if (bank != null) _buildBankLogo(primaryColor),
+                if (bank != null) _buildBankLogo(primaryColor, foregroundColor),
               ],
             ),
           ),
@@ -106,21 +119,34 @@ class WalletCard extends StatelessWidget {
       ),
     );
   }
-  
+
   Color _getPrimaryColor(BuildContext context) {
     if (data != null) return data!.primaryColor;
+    if (cardData?.customGradientStartColor != null) {
+      return Color(cardData!.customGradientStartColor!);
+    }
+    final designId = cardData?.designId;
+    final design = designId == null ? null : CardDesigns.getById(designId);
+    if (design != null) return design.primaryColor;
     if (bank != null) return bank!.primaryColor;
     return context.watch<ThemeProvider>().getPrimaryColor();
   }
-  
+
   Color _getSecondaryColor(BuildContext context) {
     if (data != null) {
-      return data!.secondaryColor ?? Color.lerp(data!.primaryColor, Colors.black, 0.15)!;
+      return data!.secondaryColor ??
+          Color.lerp(data!.primaryColor, Colors.black, 0.15)!;
     }
+    if (cardData?.customGradientEndColor != null) {
+      return Color(cardData!.customGradientEndColor!);
+    }
+    final designId = cardData?.designId;
+    final design = designId == null ? null : CardDesigns.getById(designId);
+    if (design != null) return design.secondaryColor;
     if (bank != null) return bank!.secondaryColor;
     return context.watch<ThemeProvider>().getPrimaryContainerColor();
   }
-  
+
   bool _shouldShowMastercardCircles() {
     if (data != null) return data!.showMastercardCircles;
     if (cardData != null) {
@@ -144,7 +170,7 @@ class WalletCard extends StatelessWidget {
                   height: circleSize,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: const Color(0xFFE85D3F).withOpacity(0.9),
+                    color: const Color(0xFFE85D3F).withValues(alpha: 0.9),
                   ),
                 ),
               ),
@@ -156,7 +182,7 @@ class WalletCard extends StatelessWidget {
                   height: circleSize,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: const Color(0xFFE85D3F).withOpacity(0.7),
+                    color: const Color(0xFFE85D3F).withValues(alpha: 0.7),
                   ),
                 ),
               ),
@@ -168,7 +194,7 @@ class WalletCard extends StatelessWidget {
                   height: circleSize,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: const Color(0xFFE85D3F).withOpacity(0.5),
+                    color: const Color(0xFFE85D3F).withValues(alpha: 0.5),
                   ),
                 ),
               ),
@@ -179,7 +205,9 @@ class WalletCard extends StatelessWidget {
     );
   }
 
-  Widget _buildCardContent() {
+  Widget _buildCardContent(Color foregroundColor) {
+    final secondaryForeground = CardContrast.secondary(foregroundColor);
+    final tertiaryForeground = CardContrast.tertiary(foregroundColor);
     return Padding(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -188,8 +216,8 @@ class WalletCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(child: _buildCardTypeLabel()),
-              _buildContactlessIcon(),
+              Expanded(child: _buildCardTypeLabel(foregroundColor)),
+              _buildContactlessIcon(secondaryForeground),
             ],
           ),
           const Spacer(),
@@ -199,7 +227,7 @@ class WalletCard extends StatelessWidget {
               style: AppTypography.mono(
                 fontSize: 13,
                 fontWeight: FontWeight.w400,
-                color: Colors.white70,
+                color: secondaryForeground,
                 letterSpacing: 1,
               ),
             ),
@@ -209,7 +237,7 @@ class WalletCard extends StatelessWidget {
                 cardholderName!.toUpperCase(),
                 style: AppTypography.overline(
                   fontSize: 11,
-                  color: Colors.white60,
+                  color: tertiaryForeground,
                 ),
               ),
           ] else if (data != null) ...[
@@ -218,7 +246,7 @@ class WalletCard extends StatelessWidget {
               style: AppTypography.mono(
                 fontSize: 13,
                 fontWeight: FontWeight.w400,
-                color: Colors.black54,
+                color: secondaryForeground,
                 letterSpacing: 1,
               ),
             ),
@@ -228,7 +256,9 @@ class WalletCard extends StatelessWidget {
     );
   }
 
-  Widget _buildCardTypeLabel() {
+  Widget _buildCardTypeLabel(Color foregroundColor) {
+    final secondaryForeground = CardContrast.secondary(foregroundColor);
+    final tertiaryForeground = CardContrast.tertiary(foregroundColor);
     if (cardData != null) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -237,52 +267,50 @@ class WalletCard extends StatelessWidget {
             children: [
               Text(
                 cardData!.categoryName,
-                style: AppTypography.cardName(color: Colors.white),
+                style: AppTypography.cardName(color: foregroundColor),
               ),
               Text(
                 ' Card',
-                style: AppTypography.cardNameLight(color: Colors.white70),
+                style: AppTypography.cardNameLight(color: secondaryForeground),
               ),
             ],
           ),
-          if (cardData!.cardNickname != null && cardData!.cardNickname!.isNotEmpty)
+          if (cardData!.cardNickname != null &&
+              cardData!.cardNickname!.isNotEmpty)
             Text(
               cardData!.cardNickname!,
-              style: AppTypography.overline(color: Colors.white60),
+              style: AppTypography.overline(color: tertiaryForeground),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
         ],
       );
     }
-    
+
     return Row(
       children: [
         Text(
           data!.cardTypePrefix,
-          style: AppTypography.cardName(fontSize: 16, color: Colors.black87),
+          style: AppTypography.cardName(fontSize: 16, color: foregroundColor),
         ),
         Text(
           data!.cardTypeSuffix,
-          style: AppTypography.cardNameLight(fontSize: 16, color: Colors.black54),
+          style: AppTypography.cardNameLight(
+            fontSize: 16,
+            color: secondaryForeground,
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildContactlessIcon() {
-    return Icon(
-      Icons.contactless,
-      color: cardData != null 
-          ? Colors.white.withOpacity(0.7)
-          : Colors.black.withOpacity(0.5),
-      size: 26,
-    );
+  Widget _buildContactlessIcon(Color color) {
+    return Icon(Icons.contactless, color: color, size: 26);
   }
-  
-  Widget _buildBankLogo(Color primaryColor) {
+
+  Widget _buildBankLogo(Color primaryColor, Color foregroundColor) {
     if (bank == null) return const SizedBox.shrink();
-    
+
     return Positioned(
       top: 16,
       right: 16,
@@ -291,6 +319,7 @@ class WalletCard extends StatelessWidget {
         size: 48,
         useSmall: false,
         backgroundColor: primaryColor,
+        foregroundColor: foregroundColor,
         maxWidth: 130,
       ),
     );
@@ -298,11 +327,7 @@ class WalletCard extends StatelessWidget {
 
   Widget _buildNetworkLogo() {
     if (cardData == null) {
-      return Positioned(
-        top: 14,
-        right: 54,
-        child: _getNetworkWidget(),
-      );
+      return Positioned(top: 14, right: 54, child: _getNetworkWidget());
     }
     return const SizedBox.shrink();
   }

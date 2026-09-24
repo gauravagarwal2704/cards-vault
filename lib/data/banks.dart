@@ -189,7 +189,7 @@ class Banks {
       primaryColor: Color(0xFF7B2D84),
       secondaryColor: Color(0xFF5C2263),
       logoPathSmall: 'assets/banks-logo-small/dummy.svg',
-      logoPathLarge: 'assets/banks-logo-large/dummy.svg',
+      logoPathLarge: 'assets/banks-logo-small/dummy.svg',
     ),
     BankInfo(
       id: 'southindian',
@@ -225,7 +225,7 @@ class Banks {
       primaryColor: Color(0xFF00539F),
       secondaryColor: Color(0xFF003F77),
       logoPathSmall: 'assets/banks-logo-small/Nainital Bank.svg',
-      logoPathLarge: 'assets/banks-logo-large/dummy.svg',
+      logoPathLarge: 'assets/banks-logo-small/dummy.svg',
     ),
     BankInfo(
       id: 'idbi',
@@ -482,7 +482,7 @@ class Banks {
       primaryColor: Color(0xFF6B7280),
       secondaryColor: Color(0xFF4B5563),
       logoPathSmall: 'assets/banks-logo-small/dummy.svg',
-      logoPathLarge: 'assets/banks-logo-large/dummy.svg',
+      logoPathLarge: 'assets/banks-logo-small/dummy.svg',
     ),
   ];
 

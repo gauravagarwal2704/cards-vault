@@ -6,7 +6,7 @@ import '../theme/app_typography.dart';
 
 class BankLogo extends StatelessWidget {
   static const String dummyLogoSmall = 'assets/banks-logo-small/dummy.svg';
-  static const String dummyLogoLarge = 'assets/banks-logo-large/dummy.svg';
+  static const String dummyLogoLarge = dummyLogoSmall;
 
   /// Large logos that are wide wordmarks rather than square marks. Tinting them
   /// white collapses the artwork into a solid block, so they render untinted.
@@ -14,6 +14,7 @@ class BankLogo extends StatelessWidget {
   /// used to give the wordmark a correctly proportioned box rather than a
   /// square one.
   static const Map<String, double> _wideLogoAspectRatios = {
+    'amex': 512 / 187,
     'hdfc': 139 / 24,
     'icici': 120 / 24,
     'federal': 78 / 24,
@@ -33,6 +34,11 @@ class BankLogo extends StatelessWidget {
   /// Wordmarks that remain transparent and adapt their text to the card while
   /// retaining the brand colours in the symbol.
   static const Set<String> _adaptiveWordmarks = {'icici'};
+
+  /// This artwork contains its own blue background and white lettering.
+  /// Tinting the complete SVG for a dark card turns it into a blank white
+  /// square, so its brand colours must always be preserved.
+  static const Set<String> _brandColorLogos = {'amex'};
 
   final BankInfo? bank;
   final double size;
@@ -64,27 +70,35 @@ class BankLogo extends StatelessWidget {
       return showFallback ? _buildFallback(null) : const SizedBox.shrink();
     }
 
-    final logoPath = useSmall
-        ? (bank!.logoPathSmall ?? dummyLogoSmall)
-        : (bank!.logoPathLarge ?? dummyLogoLarge);
-
     final isDarkBackground = foregroundColor != null
         ? foregroundColor!.computeLuminance() > 0.5
         : backgroundColor != null && backgroundColor!.computeLuminance() < 0.5;
 
     final bankId = bank!.id.toLowerCase();
+    final logoPath = bankId == 'amex' && !useSmall
+        ? 'assets/networks/amex.svg'
+        : useSmall
+        ? (bank!.logoPathSmall ?? dummyLogoSmall)
+        : (bank!.logoPathLarge ?? dummyLogoLarge);
     final aspectRatio = useSmall ? null : _wideLogoAspectRatios[bankId];
 
     if (aspectRatio != null) {
       final isAdaptive = _adaptiveWordmarks.contains(bankId);
+      final isAmexWordmark = bankId == 'amex';
       return _buildWideLogo(
         logoPath,
         aspectRatio,
-        plated: !isAdaptive && !_selfBackedLogos.contains(bankId),
+        plated:
+            !isAdaptive &&
+            !isAmexWordmark &&
+            !_selfBackedLogos.contains(bankId),
         colorMapper: isAdaptive
             ? _IciciWordmarkColorMapper(
                 isDarkBackground ? Colors.white : Colors.black,
               )
+            : null,
+        colorFilter: isAmexWordmark && isDarkBackground
+            ? const ColorFilter.mode(Colors.white, BlendMode.srcIn)
             : null,
       );
     }
@@ -98,7 +112,7 @@ class BankLogo extends StatelessWidget {
         fit: BoxFit.contain,
         placeholderBuilder: (context) => _buildFallback(bank),
         errorBuilder: (context, error, stackTrace) => _buildFallback(bank),
-        colorFilter: isDarkBackground
+        colorFilter: isDarkBackground && !_brandColorLogos.contains(bankId)
             ? const ColorFilter.mode(Colors.white, BlendMode.srcIn)
             : null,
       ),
@@ -110,6 +124,7 @@ class BankLogo extends StatelessWidget {
     double aspectRatio, {
     required bool plated,
     ColorMapper? colorMapper,
+    ColorFilter? colorFilter,
   }) {
     final padding = plated ? size * 0.1 : 0.0;
     final availableWidth = (maxWidth ?? size * 4.5) - padding * 2;
@@ -127,6 +142,7 @@ class BankLogo extends StatelessWidget {
       height: logoHeight,
       fit: BoxFit.contain,
       colorMapper: colorMapper,
+      colorFilter: colorFilter,
       placeholderBuilder: (context) => _buildFallback(bank),
       errorBuilder: (context, error, stackTrace) => _buildFallback(bank),
     );

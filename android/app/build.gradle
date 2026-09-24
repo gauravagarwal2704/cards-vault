@@ -12,7 +12,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.cardswallet.cards_wallet"
+    namespace = "com.cardswallet.cards_vault"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -22,15 +22,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.cardswallet.cards_wallet"
+        applicationId = "com.cardswallet.cards_vault"
         minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-
-        ndk {
-            abiFilters 'arm64-v8a'
-        }
     }
 
     signingConfigs {
@@ -50,6 +46,11 @@ android {
             packaging {
                 jniLibs {
                     excludes += ['**/libVkLayer_khronos_validation.so']
+                    // CardScan uses the CPU Interpreter API only. LiteRT 2.x
+                    // also ships this optional GPU accelerator, which is not
+                    // loaded by our scanner and needlessly expands the APK and
+                    // native attack surface.
+                    excludes += ['**/libLiteRtClGlAccelerator.so']
                 }
             }
         }
@@ -61,7 +62,13 @@ android {
 
             packaging {
                 jniLibs {
+                    // Release APKs optimize for download size. The package
+                    // manager extracts the same 16-KiB-aligned libraries at
+                    // install time, so scanner behavior and ABI coverage stay
+                    // unchanged while LiteRT and OCR binaries are deflated.
+                    useLegacyPackaging = true
                     excludes += ['**/libVkLayer_khronos_validation.so']
+                    excludes += ['**/libLiteRtClGlAccelerator.so']
                 }
             }
         }
@@ -76,4 +83,15 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Stripe's last portable CardScan model/runtime is vendored as a local,
+    // telemetry-free Android module. It analyzes CameraX preview frames and
+    // does not use Google Play Services or the Stripe SDK's analytics layer.
+    implementation project(":stripe-cardscan-local")
+
+    // Tesseract is retained only for expiry/name extraction from the single
+    // preview crop that CardScan accepted. It never receives a live stream.
+    implementation "cz.adaptech.tesseract4android:tesseract4android:4.9.0"
 }

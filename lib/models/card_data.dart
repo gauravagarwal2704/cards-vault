@@ -9,6 +9,10 @@ enum ReadMethod { nfc, camera, manual }
 enum CardCategory { credit, debit }
 
 class CardData {
+  static const String hiddenCardNumber = '•••• •••• •••• ••••';
+  static const String hiddenExpiryDate = '••/••';
+  static const String hiddenCvv = '•••';
+
   final String _encryptedCardNumber;
   final String _encryptedExpiryDate;
   final String? _encryptedCardholderName;
@@ -186,12 +190,12 @@ class CardData {
 
   String get maskedCardNumber {
     if (lastFourDigits.length == 4) {
-      return '**** **** **** $lastFourDigits';
+      return '•••• •••• •••• $lastFourDigits';
     }
-    return '**** $lastFourDigits';
+    return '•••• $lastFourDigits';
   }
 
-  String get maskedCvv => '***';
+  String get maskedCvv => hiddenCvv;
 
   String get categoryName =>
       cardCategory == CardCategory.credit ? 'Credit' : 'Debit';

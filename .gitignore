@@ -2,8 +2,17 @@
 *.class
 *.log
 *.pyc
+*.pyo
+*.pyd
 *.swp
+*.tmp
+*.bak
+*.orig
+*.trace
+*.hprof
+*.profraw
 .DS_Store
+**/__pycache__/
 .atom/
 .build/
 .buildlog/
@@ -11,6 +20,14 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
+
+# Generated diagnostics, captures, and local scratch work
+**/build/reports/
+/reports/
+**/captures/
+**/screenshots/
+**/scratch/
+*.xcresult/
 
 # IntelliJ related
 *.iml

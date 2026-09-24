@@ -177,6 +177,42 @@ void main() {
     expect(find.byType(ImageFiltered), findsOneWidget);
   });
 
+  testWidgets('card backgrounds decode to a stable rendered-size cache width', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox(
+            width: 350,
+            height: 220,
+            child: CardBackgroundSurface(
+              design: CardDesigns.image.first,
+              customBackgroundImagePath: '/missing/background.jpg',
+              fallbackPrimaryColor: Colors.blueGrey,
+              fallbackSecondaryColor: Colors.black,
+              borderRadius: BorderRadius.circular(16),
+              showShadow: false,
+              child: const SizedBox.expand(),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final images = tester.widgetList<Image>(find.byType(Image)).toList();
+    expect(images, hasLength(2));
+    for (final image in images) {
+      expect(image.image, isA<ResizeImage>());
+      final resized = image.image as ResizeImage;
+      expect(resized.width, 1280);
+      expect(resized.height, isNull);
+    }
+  });
+
   testWidgets('blur control is offered for Image designs and custom images', (
     tester,
   ) async {
@@ -247,8 +283,8 @@ void main() {
   test('Gradient 2.0 previews contain no hard rasterization seams', () {
     for (final number in [2, 3, 4, 6, 7, 8]) {
       final path =
-          'assets/card_backgrounds/gradient_blur/${number.toString().padLeft(2, '0')}.png';
-      final image = image_lib.decodePng(File(path).readAsBytesSync());
+          'assets/card_backgrounds/gradient_blur/${number.toString().padLeft(2, '0')}.webp';
+      final image = image_lib.decodeImage(File(path).readAsBytesSync());
       expect(image, isNotNull, reason: path);
 
       final (columnJump, rowJump) = _largestInteriorEdgeJump(image!);

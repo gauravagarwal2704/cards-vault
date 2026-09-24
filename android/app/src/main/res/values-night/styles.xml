@@ -6,6 +6,13 @@
              the Flutter engine draws its first frame -->
         <item name="android:windowBackground">@drawable/launch_background</item>
     </style>
+    <style name="LaunchThemeThreeD" parent="LaunchTheme" />
+    <style name="LaunchThemePurple" parent="LaunchTheme" />
+    <style name="LaunchThemeMulticolor" parent="LaunchTheme" />
+    <style name="LaunchThemeOcean" parent="LaunchTheme" />
+    <style name="LaunchThemeEmerald" parent="LaunchTheme" />
+    <style name="LaunchThemeSunset" parent="LaunchTheme" />
+    <style name="LaunchThemeRed" parent="LaunchTheme" />
     <!-- Theme applied to the Android Window as soon as the process has started.
          This theme determines the color of the Android Window while your
          Flutter UI initializes, as well as behind your Flutter UI while its

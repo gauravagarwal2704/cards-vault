@@ -1,3 +1,5 @@
+import 'dart:math';
+
 class NormalizedTextBox {
   final double left;
   final double top;
@@ -12,6 +14,9 @@ class NormalizedTextBox {
   });
 
   double get centerY => top + (height / 2);
+  double get centerX => left + (width / 2);
+  double get right => left + width;
+  double get bottom => top + height;
 }
 
 /// A single line observed by an on-device recognizer.
@@ -22,12 +27,16 @@ class NormalizedTextBox {
 class CardTextObservation {
   final String text;
   final int frameIndex;
+  final String? sourceId;
+  final bool isComposite;
   final double recognizerConfidence;
   final NormalizedTextBox? box;
 
   const CardTextObservation({
     required this.text,
     required this.frameIndex,
+    this.sourceId,
+    this.isComposite = false,
     required this.recognizerConfidence,
     this.box,
   });
@@ -37,14 +46,18 @@ class ResolvedCardField {
   final String? value;
   final double confidence;
   final int supportingFrames;
+  final bool isAmbiguous;
+  final String? sourceId;
 
   const ResolvedCardField({
     required this.value,
     required this.confidence,
     required this.supportingFrames,
+    this.isAmbiguous = false,
+    this.sourceId,
   });
 
-  bool get needsReview => value == null || confidence < 0.82;
+  bool get needsReview => value == null || isAmbiguous || confidence < 0.82;
 }
 
 class CardFieldResolution {
@@ -61,11 +74,14 @@ class CardFieldResolution {
 
 class CardFieldResolver {
   static final RegExp _issuerOrProductWords = RegExp(
-    r'\b(VISA|MASTERCARD|MASTER\s*CARD|AMEX|AMERICAN\s*EXPRESS|DISCOVER|RUPAY|MAESTRO|UNIONPAY|JCB|DINERS|DEBIT|CREDIT|CARD|BANK|VALID|THRU|THROUGH|EXPIRES?|EXPIRY|MEMBER|SINCE|PLATINUM|GOLD|SILVER|CLASSIC|SIGNATURE|INFINITE|WORLD|ELITE|REWARDS?|POINTS?|CASHBACK|CONTACTLESS|INTERNATIONAL)\b',
+    r'\b(VISA|MASTERCARD|MASTER\s*CARD|AMEX|AMERICAN\s*EXPRESS|DISCOVER|RUPAY|MAESTRO|UNIONPAY|JCB|DINERS|DEBIT|CREDIT|CARD|BANK|VALID|THRU|THROUGH|EXPIRES?|EXPIRY|MEMBER|SINCE|PLATINUM|GOLD|SILVER|CLASSIC|SIGNATURE|INFINITE|WORLD|ELITE|REWARDS?|POINTS?|CASHBACK|CONTACTLESS|INTERNATIONAL|ISSUED|ISSUER|DESIGNED|AUTHORIZED|SECURITY|CODE|CUSTOMER|PROPERTY)\b',
     caseSensitive: false,
   );
 
-  CardFieldResolution resolve(List<CardTextObservation> observations) {
+  CardFieldResolution resolve(
+    List<CardTextObservation> observations, {
+    int minimumPanSupportingFrames = 1,
+  }) {
     final panCandidates = <String, _CandidateAggregate>{};
     final expiryCandidates = <String, _CandidateAggregate>{};
     final nameCandidates = <String, _CandidateAggregate>{};
@@ -75,18 +91,143 @@ class CardFieldResolver {
       _collectExpiryCandidates(observation, expiryCandidates);
       _collectNameCandidates(observation, nameCandidates);
     }
+    _collectSplitPanCandidates(observations, panCandidates);
 
     return CardFieldResolution(
-      cardNumber: _best(panCandidates),
+      cardNumber: _best(
+        panCandidates,
+        minimumSupportingFrames: minimumPanSupportingFrames,
+      ),
       expiryDate: _best(expiryCandidates),
       cardholderName: _best(nameCandidates),
     );
+  }
+
+  /// Payment cards sometimes print the PAN as four stacked groups instead of
+  /// one horizontal line. ML Kit correctly returns those groups as separate
+  /// observations, so join geometrically adjacent digit groups before Luhn
+  /// validation rather than treating them as unrelated text.
+  void _collectSplitPanCandidates(
+    List<CardTextObservation> observations,
+    Map<String, _CandidateAggregate> output,
+  ) {
+    final bySource = <({int frameIndex, String sourceId}), List<_DigitGroup>>{};
+    for (final observation in observations) {
+      if (observation.isComposite) continue;
+      final box = observation.box;
+      if (box == null) continue;
+      final digits = _standaloneDigitGroup(observation.text);
+      if (digits == null) continue;
+      final key = (
+        frameIndex: observation.frameIndex,
+        sourceId: observation.sourceId ?? 'frame-${observation.frameIndex}',
+      );
+      bySource
+          .putIfAbsent(key, () => <_DigitGroup>[])
+          .add(_DigitGroup(digits: digits, observation: observation));
+    }
+
+    for (final entry in bySource.entries) {
+      _collectAlignedPanRuns(
+        entry.value,
+        entry.key.frameIndex,
+        output,
+        vertical: true,
+      );
+      _collectAlignedPanRuns(
+        entry.value,
+        entry.key.frameIndex,
+        output,
+        vertical: false,
+      );
+    }
+  }
+
+  String? _standaloneDigitGroup(String text) {
+    final corrected = _correctDigitLikeCharacters(text.trim());
+    if (!RegExp(r'^[0-9\s-]+$').hasMatch(corrected)) return null;
+    final digits = corrected.replaceAll(RegExp(r'[^0-9]'), '');
+    return digits.length >= 4 && digits.length <= 8 ? digits : null;
+  }
+
+  void _collectAlignedPanRuns(
+    List<_DigitGroup> groups,
+    int frameIndex,
+    Map<String, _CandidateAggregate> output, {
+    required bool vertical,
+  }) {
+    final ordered = List<_DigitGroup>.from(groups)
+      ..sort(
+        (a, b) => vertical
+            ? a.box.top.compareTo(b.box.top)
+            : a.box.left.compareTo(b.box.left),
+      );
+
+    for (var start = 0; start < ordered.length; start++) {
+      var digits = ordered[start].digits;
+      var confidence = ordered[start].observation.recognizerConfidence;
+      var count = 1;
+      var previous = ordered[start];
+
+      for (
+        var index = start + 1;
+        index < ordered.length && count < 5;
+        index++
+      ) {
+        final next = ordered[index];
+        if (!_areAdjacent(previous.box, next.box, vertical: vertical)) continue;
+
+        digits += next.digits;
+        confidence += next.observation.recognizerConfidence;
+        count++;
+        previous = next;
+
+        if (digits.length > 19) break;
+        if (digits.length < 13 || !_isValidLuhn(digits)) continue;
+
+        final averageConfidence = confidence / count;
+        var score = averageConfidence * 0.62 + 0.25;
+        if (digits.length == 15 || digits.length == 16) score += 0.05;
+        if (count >= 3) score += 0.03;
+        _add(
+          output,
+          digits,
+          score,
+          frameIndex,
+          sourceId: ordered[start].observation.sourceId,
+        );
+      }
+    }
+  }
+
+  bool _areAdjacent(
+    NormalizedTextBox previous,
+    NormalizedTextBox next, {
+    required bool vertical,
+  }) {
+    if (vertical) {
+      final centerTolerance = max(previous.width, next.width) * 0.8 + 0.015;
+      final gap = next.top - previous.bottom;
+      return (next.centerX - previous.centerX).abs() <= centerTolerance &&
+          gap >= -0.025 &&
+          gap <= 0.14;
+    }
+
+    final centerTolerance = max(previous.height, next.height) * 0.9 + 0.01;
+    final gap = next.left - previous.right;
+    return (next.centerY - previous.centerY).abs() <= centerTolerance &&
+        gap >= -0.035 &&
+        gap <= 0.14;
   }
 
   void _collectPanCandidates(
     CardTextObservation observation,
     Map<String, _CandidateAggregate> output,
   ) {
+    // ML Kit block text can reorder lines for unconventional/vertical card
+    // layouts. Only line observations may directly produce a PAN; split lines
+    // are reconstructed using geometry within one preprocessing source.
+    if (observation.isComposite) return;
     final original = observation.text.trim();
     if (original.isEmpty) return;
 
@@ -104,7 +245,13 @@ class CardFieldResolver {
         if (centerY != null && centerY >= 0.25 && centerY <= 0.82) {
           score += 0.03;
         }
-        _add(output, candidate, score, observation.frameIndex);
+        _add(
+          output,
+          candidate,
+          score,
+          observation.frameIndex,
+          sourceId: observation.sourceId,
+        );
       }
     }
   }
@@ -158,7 +305,13 @@ class CardFieldResolver {
         if (centerY != null && centerY >= 0.35 && centerY <= 0.9) {
           score += 0.03;
         }
-        _add(output, '$month/$year', score, observation.frameIndex);
+        _add(
+          output,
+          '$month/$year',
+          score,
+          observation.frameIndex,
+          sourceId: observation.sourceId,
+        );
       }
     }
   }
@@ -188,21 +341,31 @@ class CardFieldResolver {
     final centerY = observation.box?.centerY;
     if (centerY != null && centerY >= 0.52) score += 0.1;
     if (words.length == 2 || words.length == 3) score += 0.05;
-    _add(output, value, score, observation.frameIndex);
+    _add(
+      output,
+      value,
+      score,
+      observation.frameIndex,
+      sourceId: observation.sourceId,
+    );
   }
 
   void _add(
     Map<String, _CandidateAggregate> output,
     String value,
     double score,
-    int frameIndex,
-  ) {
+    int frameIndex, {
+    String? sourceId,
+  }) {
     output
         .putIfAbsent(value, () => _CandidateAggregate())
-        .add(score.clamp(0, 0.99), frameIndex);
+        .add(score.clamp(0, 0.99), frameIndex, sourceId: sourceId);
   }
 
-  ResolvedCardField _best(Map<String, _CandidateAggregate> candidates) {
+  ResolvedCardField _best(
+    Map<String, _CandidateAggregate> candidates, {
+    int minimumSupportingFrames = 1,
+  }) {
     if (candidates.isEmpty) {
       return const ResolvedCardField(
         value: null,
@@ -211,13 +374,31 @@ class CardFieldResolver {
       );
     }
 
-    final ranked = candidates.entries.toList()
+    final allRanked = candidates.entries.toList()
       ..sort((a, b) => b.value.confidence.compareTo(a.value.confidence));
+    final ranked = allRanked
+        .where((entry) => entry.value.frames.length >= minimumSupportingFrames)
+        .toList();
+    if (ranked.isEmpty) {
+      final strongest = allRanked.first;
+      return ResolvedCardField(
+        value: null,
+        confidence: strongest.value.confidence,
+        supportingFrames: strongest.value.frames.length,
+        sourceId: strongest.value.bestSourceId,
+      );
+    }
+
     final best = ranked.first;
+    final isAmbiguous =
+        ranked.length > 1 &&
+        ranked[1].value.confidence >= best.value.confidence - 0.06;
     return ResolvedCardField(
-      value: best.key,
+      value: isAmbiguous ? null : best.key,
       confidence: best.value.confidence,
       supportingFrames: best.value.frames.length,
+      isAmbiguous: isAmbiguous,
+      sourceId: best.value.bestSourceId,
     );
   }
 
@@ -270,11 +451,15 @@ class CardFieldResolver {
 
 class _CandidateAggregate {
   double bestScore = 0;
+  String? bestSourceId;
   int evidenceCount = 0;
   final Set<int> frames = <int>{};
 
-  void add(double score, int frameIndex) {
-    if (score > bestScore) bestScore = score;
+  void add(double score, int frameIndex, {String? sourceId}) {
+    if (score > bestScore) {
+      bestScore = score;
+      bestSourceId = sourceId;
+    }
     evidenceCount++;
     frames.add(frameIndex);
   }
@@ -285,4 +470,13 @@ class _CandidateAggregate {
     final evidenceBonus = extraEvidence * 0.015;
     return (bestScore + frameBonus + evidenceBonus).clamp(0, 0.99);
   }
+}
+
+class _DigitGroup {
+  final String digits;
+  final CardTextObservation observation;
+
+  const _DigitGroup({required this.digits, required this.observation});
+
+  NormalizedTextBox get box => observation.box!;
 }

@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:encrypt/encrypt.dart' as encrypt_pkg;
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:crypto/crypto.dart';
 
@@ -18,23 +18,37 @@ class EncryptionService {
 
   static const String _keyStorageKey = 'encryption_master_key';
   encrypt_pkg.Key? _cachedKey;
+  Future<encrypt_pkg.Key>? _keyInitialization;
 
   Future<encrypt_pkg.Key> _getOrCreateKey() async {
     if (_cachedKey != null) {
       return _cachedKey!;
     }
 
-    String? storedKey = await _secureStorage.read(key: _keyStorageKey);
+    final pending = _keyInitialization;
+    if (pending != null) return pending;
 
-    if (storedKey != null) {
-      _cachedKey = encrypt_pkg.Key.fromBase64(storedKey);
-      return _cachedKey!;
+    final initialization = _loadOrCreateKey();
+    _keyInitialization = initialization;
+    try {
+      final key = await initialization;
+      _cachedKey = key;
+      return key;
+    } catch (_) {
+      // A later call may retry a transient secure-storage failure.
+      if (identical(_keyInitialization, initialization)) {
+        _keyInitialization = null;
+      }
+      rethrow;
     }
+  }
+
+  Future<encrypt_pkg.Key> _loadOrCreateKey() async {
+    final storedKey = await _secureStorage.read(key: _keyStorageKey);
+    if (storedKey != null) return encrypt_pkg.Key.fromBase64(storedKey);
 
     final key = encrypt_pkg.Key.fromSecureRandom(32);
     await _secureStorage.write(key: _keyStorageKey, value: key.base64);
-
-    _cachedKey = key;
     return key;
   }
 
@@ -64,6 +78,25 @@ class EncryptionService {
 
       final key = await _getOrCreateKey();
       return _aesGcmDecrypt(ciphertext, key);
+    } catch (e) {
+      throw Exception('Decryption failed: $e');
+    }
+  }
+
+  /// Decrypts an encrypted Base64 payload away from the UI isolate.
+  ///
+  /// Card attachments are much larger than the short text fields handled by
+  /// [decrypt]. AES-GCM decryption and Base64 decoding them on the UI isolate
+  /// can otherwise interrupt route and Hero animations.
+  Future<Uint8List> decryptBase64Bytes(String ciphertext) async {
+    try {
+      if (ciphertext.isEmpty) return Uint8List(0);
+
+      final key = await _getOrCreateKey();
+      return await compute(_decryptBase64BytesInIsolate, {
+        'ciphertext': ciphertext,
+        'key': key.base64,
+      });
     } catch (e) {
       throw Exception('Decryption failed: $e');
     }
@@ -106,7 +139,32 @@ class EncryptionService {
   }
 
   Future<void> clearKey() async {
+    final pending = _keyInitialization;
+    if (pending != null) {
+      try {
+        await pending;
+      } catch (_) {
+        // The key is being cleared anyway.
+      }
+    }
     _cachedKey = null;
+    _keyInitialization = null;
     await _secureStorage.delete(key: _keyStorageKey);
   }
+}
+
+Uint8List _decryptBase64BytesInIsolate(Map<String, String> request) {
+  final parts = request['ciphertext']!.split(':');
+  if (parts.length != 2) {
+    throw Exception('Invalid encrypted data format');
+  }
+
+  final key = encrypt_pkg.Key.fromBase64(request['key']!);
+  final iv = encrypt_pkg.IV.fromBase64(parts[0]);
+  final encrypted = encrypt_pkg.Encrypted.fromBase64(parts[1]);
+  final encrypter = encrypt_pkg.Encrypter(
+    encrypt_pkg.AES(key, mode: encrypt_pkg.AESMode.gcm),
+  );
+  final base64Payload = encrypter.decrypt(encrypted, iv: iv);
+  return base64Decode(base64Payload);
 }

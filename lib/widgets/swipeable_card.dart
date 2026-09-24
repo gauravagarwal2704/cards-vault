@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
+
 import '../theme/app_typography.dart';
+import '../theme/app_motion.dart';
 
 class SwipeableCard extends StatefulWidget {
   final Widget child;
@@ -31,12 +34,12 @@ class _SwipeableCardState extends State<SwipeableCard>
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
+    _animationController = AnimationController.unbounded(vsync: this, value: 0);
     _animationController.addListener(() {
-      setState(() {});
+      if (!mounted || _isDragging) return;
+      setState(() {
+        _dragOffset = _animationController.value;
+      });
     });
   }
 
@@ -63,29 +66,37 @@ class _SwipeableCardState extends State<SwipeableCard>
   void _onHorizontalDragEnd(DragEndDetails details) {
     _isDragging = false;
 
-    final velocity = details.velocity.pixelsPerSecond.dx;
-    
+    final velocity = details.primaryVelocity ?? 0;
+
     if (_dragOffset < -0.2 || velocity < -500) {
       // Snap to open position
-      _animateToOffset(_maxSwipeOffset);
+      _animateToOffset(_maxSwipeOffset, velocity: velocity / widget.cardWidth);
     } else {
       // Snap back to closed position
-      _animateToOffset(0.0);
+      _animateToOffset(0.0, velocity: velocity / widget.cardWidth);
     }
   }
 
-  void _animateToOffset(double target) {
-    final start = _dragOffset;
-    final end = target;
+  void _animateToOffset(double target, {double velocity = 0}) {
+    _animationController.stop();
 
-    _animationController.reset();
-    _animationController.forward();
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (reduceMotion) {
+      setState(() => _dragOffset = target);
+      _animationController.value = target;
+      return;
+    }
 
-    _animationController.addListener(() {
-      setState(() {
-        _dragOffset = start + (end - start) * Curves.easeOutCubic.transform(_animationController.value);
-      });
-    });
+    _animationController.value = _dragOffset;
+    _animationController.animateWith(
+      SpringSimulation(
+        AppMotion.actionSpring,
+        _dragOffset,
+        target,
+        velocity.clamp(-6.0, 6.0).toDouble(),
+      ),
+    );
   }
 
   void _closeSwipe() {
@@ -95,14 +106,14 @@ class _SwipeableCardState extends State<SwipeableCard>
   void _handleShare() {
     _closeSwipe();
     Future.delayed(const Duration(milliseconds: 300), () {
-      widget.onShare?.call();
+      if (mounted) widget.onShare?.call();
     });
   }
 
   void _handleDelete() {
     _closeSwipe();
     Future.delayed(const Duration(milliseconds: 300), () {
-      widget.onDelete?.call();
+      if (mounted) widget.onDelete?.call();
     });
   }
 
@@ -121,7 +132,7 @@ class _SwipeableCardState extends State<SwipeableCard>
         children: [
           // Action buttons (behind the card)
           if (isOpen) _buildActionButtons(swipeProgress),
-          
+
           // Card with transform
           Transform(
             alignment: Alignment.center,
@@ -140,9 +151,14 @@ class _SwipeableCardState extends State<SwipeableCard>
 
     return Matrix4.identity()
       ..setEntry(3, 2, 0.001) // Perspective
-      ..translate(translateX, 0.0, 0.0)
+      ..translateByDouble(translateX, 0.0, 0.0, 1)
       ..rotateY(rotateY)
-      ..scale(scale.clamp(0.95, 1.0));
+      ..scaleByDouble(
+        scale.clamp(0.95, 1.0),
+        scale.clamp(0.95, 1.0),
+        scale.clamp(0.95, 1.0),
+        1,
+      );
   }
 
   Widget _buildActionButtons(double progress) {
@@ -195,7 +211,7 @@ class _SwipeableCardState extends State<SwipeableCard>
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: color.withOpacity(0.3),
+                  color: color.withValues(alpha: 0.3),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -204,17 +220,12 @@ class _SwipeableCardState extends State<SwipeableCard>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  icon,
-                  color: Colors.white,
-                  size: 24,
-                ),
+                Icon(icon, color: Colors.white, size: 24),
                 const SizedBox(height: 4),
                 Text(
                   label,
-                  style: AppTypography.overline(color: Colors.white).copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: AppTypography.overline(color: Colors.white)
+                      .copyWith(fontWeight: FontWeight.w600),
                 ),
               ],
             ),

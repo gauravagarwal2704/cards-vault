@@ -1,22 +1,38 @@
 import 'package:flutter/material.dart';
 
-enum AppBrightnessMode {
-  light,
-  dark,
-  amoled,
+enum AppBrightnessMode { system, light, dark, amoled }
+
+enum AppColorSource { system, preset, custom }
+
+enum AppPaletteStrategy {
+  tonalSpot,
+  expressive;
+
+  DynamicSchemeVariant get schemeVariant => switch (this) {
+    AppPaletteStrategy.tonalSpot => DynamicSchemeVariant.tonalSpot,
+    AppPaletteStrategy.expressive => DynamicSchemeVariant.expressive,
+  };
+
+  String get label => switch (this) {
+    AppPaletteStrategy.tonalSpot => 'Tonal spot',
+    AppPaletteStrategy.expressive => 'Expressive',
+  };
+
+  String get description => switch (this) {
+    AppPaletteStrategy.tonalSpot => 'Keeps your chosen color dominant',
+    AppPaletteStrategy.expressive => 'Uses contrasting supporting colors',
+  };
 }
 
 class AccentColorOption {
   final String id;
   final String name;
   final Color seedColor;
-  final DynamicSchemeVariant schemeVariant;
 
   const AccentColorOption({
     required this.id,
     required this.name,
     required this.seedColor,
-    this.schemeVariant = DynamicSchemeVariant.tonalSpot,
   });
 
   static const AccentColorOption indigo = AccentColorOption(
@@ -83,7 +99,6 @@ class AccentColorOption {
     id: 'graphite',
     name: 'Graphite',
     seedColor: Color(0xFF64748B),
-    schemeVariant: DynamicSchemeVariant.neutral,
   );
 
   static const List<AccentColorOption> presets = [
@@ -100,6 +115,17 @@ class AccentColorOption {
     graphite,
   ];
 
+  /// A deliberately compact set for the Appearance screen. The remaining
+  /// presets stay available so existing saved preferences continue to load.
+  static const List<AccentColorOption> featuredPresets = [
+    indigo,
+    ocean,
+    ember,
+    forest,
+    orchid,
+    graphite,
+  ];
+
   static AccentColorOption? findById(String id) {
     for (final option in presets) {
       if (option.id == id) return option;
@@ -109,7 +135,7 @@ class AccentColorOption {
 
   static AccentColorOption? findBySeed(Color color) {
     for (final option in presets) {
-      if (option.seedColor.value == color.value) return option;
+      if (option.seedColor.toARGB32() == color.toARGB32()) return option;
     }
     return null;
   }

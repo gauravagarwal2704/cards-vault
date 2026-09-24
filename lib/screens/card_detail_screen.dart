@@ -1,21 +1,31 @@
+import 'dart:async';
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:provider/provider.dart';
+
 import '../models/card_data.dart';
 import '../data/banks.dart';
 import '../data/card_designs.dart';
 import '../services/auth_service.dart';
+import '../services/app_log_service.dart';
 import '../services/secure_card_storage.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/backup_password_dialog.dart';
-import '../widgets/bank_logo.dart';
 import '../widgets/card_attachments.dart';
-import '../widgets/card_network_logo.dart';
+import '../widgets/wallet_card_face.dart';
+import '../widgets/wallet_card_hero.dart';
+import '../widgets/card_background_surface.dart';
 import '../widgets/wallet_card.dart';
+import '../utils/card_contrast.dart';
 import '../utils/card_network_utils.dart';
 import 'card_edit_screen.dart';
 import '../theme/app_typography.dart';
+import '../theme/app_motion.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
 
 class CardDetailScreen extends StatefulWidget {
   final CardData card;
@@ -32,7 +42,6 @@ class CardDetailScreen extends StatefulWidget {
 }
 
 class _CardDetailScreenState extends State<CardDetailScreen> {
-  final AuthService _authService = AuthService();
   final SecureCardStorage _cardStorage = SecureCardStorage();
   bool _isCardNumberVisible = false;
   bool _isExpiryVisible = false;
@@ -44,12 +53,42 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
   String? _cardholderName;
   String? _expiryDate;
   CardNetwork _network = CardNetwork.unknown;
+  Timer? _hideSensitiveTimer;
+  int? _cardDragPointer;
+  Offset? _cardDragStart;
+  VelocityTracker? _cardDragVelocityTracker;
+  double _cardDragExtent = 0;
+  bool _isDraggingCard = false;
+  bool _isDismissingCard = false;
+
+  static const double _cardDragSlop = 10;
+  static const double _cardDismissDistance = 88;
+  static const double _cardDismissVelocity = 800;
 
   @override
   void initState() {
     super.initState();
+    AppLogService.instance.action('Navigation', 'Opened card details');
     _card = widget.card;
     _loadCardFaceDetails();
+  }
+
+  @override
+  void dispose() {
+    _hideSensitiveTimer?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleSensitiveHide() {
+    _hideSensitiveTimer?.cancel();
+    _hideSensitiveTimer = Timer(const Duration(seconds: 30), () {
+      if (!mounted) return;
+      setState(() {
+        _isCardNumberVisible = false;
+        _isExpiryVisible = false;
+        _isCvvVisible = false;
+      });
+    });
   }
 
   Future<void> _loadCardFaceDetails() async {
@@ -76,31 +115,41 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
     final fromNumber = CardNetworkUtils.detectNetwork(number);
     if (fromNumber == CardNetwork.unknown) return fromNumber;
 
-    final repaired = _card.copyWith(
-      cardType: CardNetworkUtils.getNetworkName(fromNumber),
-    );
-    if (repaired.id != null) {
+    final cardId = _card.id;
+    if (cardId != null) {
       try {
-        await _cardStorage.updateCard(repaired);
-        _card = repaired;
-      } catch (e) {
-        debugPrint('Could not persist repaired card type: $e');
+        final repaired = await _cardStorage.updateCardById(
+          cardId,
+          (current) => current.copyWith(
+            cardType: CardNetworkUtils.getNetworkName(fromNumber),
+          ),
+        );
+        if (repaired != null) _card = repaired;
+      } catch (_) {
+        // A failed metadata repair must not expose storage paths or card data.
       }
     }
     return fromNumber;
   }
 
-  Future<bool> _ensureAuthenticated({required String reason}) async {
-    final authenticated = await _authService.authenticateForCardDetails(
+  Future<bool> _ensureAuthenticated({
+    required ProtectedAction action,
+    required String reason,
+  }) async {
+    final authentication =
+        context.read<AuthenticationCoordinator?>() ??
+        AuthenticationCoordinator();
+    final authenticated = await authentication.authorize(
+      action,
       reason: reason,
     );
     if (!authenticated && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _authService.lastErrorMessage ?? 'Authentication required',
+            authentication.lastErrorMessage ?? 'Authentication required',
           ),
-          backgroundColor: Colors.red.shade600,
+          backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
     }
@@ -110,83 +159,110 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
   Future<void> _toggleCardNumberVisibility() async {
     if (_isCardNumberVisible) {
       setState(() => _isCardNumberVisible = false);
+      AppLogService.instance.action('Card details', 'Hid card number');
       return;
     }
-    if (await _ensureAuthenticated(reason: 'Authenticate to view card number') &&
+    if (await _ensureAuthenticated(
+          action: ProtectedAction.revealCardDetails,
+          reason: 'Authenticate to view card number',
+        ) &&
         mounted) {
+      HapticFeedback.selectionClick();
       setState(() => _isCardNumberVisible = true);
+      AppLogService.instance.action('Card details', 'Revealed card number');
+      _scheduleSensitiveHide();
     }
   }
 
   Future<void> _toggleExpiryVisibility() async {
     if (_isExpiryVisible) {
       setState(() => _isExpiryVisible = false);
+      AppLogService.instance.action('Card details', 'Hid expiry date');
       return;
     }
-    if (await _ensureAuthenticated(reason: 'Authenticate to view expiry date') &&
+    if (await _ensureAuthenticated(
+          action: ProtectedAction.revealCardDetails,
+          reason: 'Authenticate to view expiry date',
+        ) &&
         mounted) {
+      HapticFeedback.selectionClick();
       setState(() => _isExpiryVisible = true);
+      AppLogService.instance.action('Card details', 'Revealed expiry date');
+      _scheduleSensitiveHide();
     }
   }
 
   Future<void> _toggleCvvVisibility() async {
     if (_isCvvVisible) {
       setState(() => _isCvvVisible = false);
+      AppLogService.instance.action('Card details', 'Hid CVV');
       return;
     }
-    if (await _ensureAuthenticated(reason: 'Authenticate to view CVV') &&
+    if (await _ensureAuthenticated(
+          action: ProtectedAction.revealCardDetails,
+          reason: 'Authenticate to view CVV',
+        ) &&
         mounted) {
+      HapticFeedback.selectionClick();
       setState(() => _isCvvVisible = true);
+      AppLogService.instance.action('Card details', 'Revealed CVV');
+      _scheduleSensitiveHide();
     }
   }
 
   Future<void> _copyToClipboard(String text, String label) async {
     await Clipboard.setData(ClipboardData(text: text));
+    AppLogService.instance.action(
+      'Card details',
+      'Copied protected field',
+      details: {'field': label},
+    );
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('$label copied'),
           duration: const Duration(seconds: 2),
-          backgroundColor: Colors.green.shade600,
+          backgroundColor: AppSemanticColors.of(context).success,
         ),
       );
     }
   }
 
   Future<void> _copyCardNumber() async {
-    if (!_isCardNumberVisible) {
-      final ok = await _ensureAuthenticated(
-        reason: 'Authenticate to copy card number',
-      );
-      if (!ok) return;
-    }
+    final ok = await _ensureAuthenticated(
+      action: ProtectedAction.copyCardDetails,
+      reason: 'Authenticate to copy card number',
+    );
+    if (!ok) return;
     final number = await _card.getDecryptedCardNumber();
     if (!mounted) return;
     await _copyToClipboard(number, 'Card number');
   }
 
   Future<void> _copyExpiry() async {
-    if (!_isExpiryVisible) {
-      final ok = await _ensureAuthenticated(
-        reason: 'Authenticate to copy expiry date',
-      );
-      if (!ok) return;
-    }
+    final ok = await _ensureAuthenticated(
+      action: ProtectedAction.copyCardDetails,
+      reason: 'Authenticate to copy expiry date',
+    );
+    if (!ok) return;
     final expiry = await _card.getDecryptedExpiryDate();
     if (!mounted) return;
     await _copyToClipboard(expiry, 'Expiry date');
   }
 
   Future<void> _copyCvv() async {
-    final ok = await _ensureAuthenticated(reason: 'Authenticate to copy CVV');
+    final ok = await _ensureAuthenticated(
+      action: ProtectedAction.copyCardDetails,
+      reason: 'Authenticate to copy CVV',
+    );
     if (!ok) return;
     final cvv = await _card.getDecryptedCvv();
     if (!mounted) return;
     if (cvv == null || cvv.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No CVV saved for this card'),
-          backgroundColor: Colors.orange,
+        SnackBar(
+          content: const Text('No CVV saved for this card'),
+          backgroundColor: AppSemanticColors.of(context).warning,
         ),
       );
       return;
@@ -208,9 +284,11 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
+          FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
             child: const Text('Delete'),
           ),
         ],
@@ -220,34 +298,145 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
     if (confirmed == true && _card.id != null) {
       try {
         await _cardStorage.deleteCard(_card.id!);
+        AppLogService.instance.action('Cards', 'Deleted card');
         if (mounted) {
           Navigator.pop(context, true);
         }
-      } catch (e) {
+      } catch (_) {
+        AppLogService.instance.record('Cards', 'Card deletion failed');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to delete: $e'), backgroundColor: Colors.red),
+            SnackBar(
+              content: const Text('The card could not be deleted.'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
           );
         }
       }
     }
   }
 
-  Future<void> _editCard() async {
+  Future<void> _editCard({
+    CardEditInitialSection initialSection = CardEditInitialSection.cardDetails,
+  }) async {
+    final authenticated = await _ensureAuthenticated(
+      action: ProtectedAction.editCardDetails,
+      reason: 'Authenticate to edit protected card details',
+    );
+    if (!authenticated || !mounted) return;
+
+    AppLogService.instance.action(
+      'Card details',
+      'Opened card editor',
+      details: {'section': initialSection.name},
+    );
+
     final result = await Navigator.push<CardData>(
       context,
       MaterialPageRoute(
-        builder: (context) => CardEditScreen(card: _card),
+        builder: (context) =>
+            CardEditScreen(card: _card, initialSection: initialSection),
       ),
     );
     if (result != null && mounted) {
+      AppLogService.instance.action('Card details', 'Card edit completed');
       setState(() => _card = result);
       Navigator.pop(context, true);
     }
   }
 
-  void _showShareBottomSheet() {
-    showModalBottomSheet(
+  void _handleCardPointerDown(PointerDownEvent event) {
+    if (_cardDragPointer != null || _isDismissingCard) return;
+    _cardDragPointer = event.pointer;
+    _cardDragStart = event.position;
+    _cardDragVelocityTracker = VelocityTracker.withKind(event.kind)
+      ..addPosition(event.timeStamp, event.position);
+  }
+
+  void _handleCardPointerMove(PointerMoveEvent event) {
+    if (event.pointer != _cardDragPointer || _cardDragStart == null) return;
+    _cardDragVelocityTracker?.addPosition(event.timeStamp, event.position);
+
+    final delta = event.position - _cardDragStart!;
+    // Listening to pointer events instead of claiming the vertical gesture
+    // keeps upward drags available to the surrounding scroll view.
+    if (delta.dy <= _cardDragSlop || delta.dy < delta.dx.abs()) {
+      if (_isDraggingCard) _resetCardDrag();
+      return;
+    }
+
+    final extent = delta.dy - _cardDragSlop;
+    if ((_cardDragExtent - extent).abs() < 0.5) return;
+    setState(() {
+      _isDraggingCard = true;
+      _cardDragExtent = extent;
+    });
+  }
+
+  void _handleCardPointerUp(PointerUpEvent event) {
+    if (event.pointer != _cardDragPointer) return;
+    _cardDragVelocityTracker?.addPosition(event.timeStamp, event.position);
+    final velocity =
+        _cardDragVelocityTracker?.getVelocity().pixelsPerSecond.dy ?? 0;
+    final shouldDismiss =
+        _cardDragExtent >= _cardDismissDistance ||
+        (_cardDragExtent >= 24 && velocity >= _cardDismissVelocity);
+
+    _clearCardPointerTracking();
+    if (shouldDismiss) {
+      _dismissCardFromSwipe();
+    } else {
+      _settleCardBack();
+    }
+  }
+
+  void _handleCardPointerCancel(PointerCancelEvent event) {
+    if (event.pointer != _cardDragPointer) return;
+    _clearCardPointerTracking();
+    _settleCardBack();
+  }
+
+  void _clearCardPointerTracking() {
+    _cardDragPointer = null;
+    _cardDragStart = null;
+    _cardDragVelocityTracker = null;
+  }
+
+  void _resetCardDrag() {
+    if (!mounted || (!_isDraggingCard && _cardDragExtent == 0)) return;
+    setState(() {
+      _isDraggingCard = false;
+      _cardDragExtent = 0;
+    });
+  }
+
+  void _settleCardBack() {
+    if (!mounted) return;
+    setState(() {
+      _isDraggingCard = false;
+      _cardDragExtent = 0;
+    });
+  }
+
+  Future<void> _dismissCardFromSwipe() async {
+    if (_isDismissingCard || !mounted) return;
+    _isDismissingCard = true;
+    HapticFeedback.lightImpact();
+    final popped = await Navigator.of(context).maybePop();
+    if (!popped && mounted) {
+      _isDismissingCard = false;
+      _settleCardBack();
+    }
+  }
+
+  Future<void> _showShareBottomSheet() async {
+    final authenticated = await _ensureAuthenticated(
+      action: ProtectedAction.shareCardDetails,
+      reason: 'Authenticate to choose protected card details to share',
+    );
+    if (!authenticated || !mounted) return;
+    AppLogService.instance.action('Card sharing', 'Opened share options');
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -257,311 +446,185 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = context.watch<ThemeProvider>();
+    final scheme = Theme.of(context).colorScheme;
     final bank = _card.bankId != null ? Banks.getById(_card.bankId!) : null;
-    final design = _card.designId != null ? CardDesigns.getById(_card.designId!) : null;
-    final primaryColor = design?.primaryColor ?? bank?.primaryColor ?? Colors.grey.shade700;
-    final secondaryColor = design?.secondaryColor ?? bank?.secondaryColor ?? Colors.grey.shade800;
+    final design = _card.designId != null
+        ? CardDesigns.getById(_card.designId!)
+        : null;
+    final primaryColor = _card.customGradientStartColor != null
+        ? Color(_card.customGradientStartColor!)
+        : design?.primaryColor ?? bank?.primaryColor ?? scheme.primary;
+    final secondaryColor = _card.customGradientEndColor != null
+        ? Color(_card.customGradientEndColor!)
+        : design?.secondaryColor ??
+              bank?.secondaryColor ??
+              scheme.primaryContainer;
 
     return Scaffold(
-      backgroundColor: themeProvider.getBackgroundColor(),
+      backgroundColor: scheme.surface,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back,
-            color: themeProvider.getPrimaryTextColor(),
-          ),
+          icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
           IconButton(
-            icon: Icon(
-              Icons.share_outlined,
-              color: themeProvider.getPrimaryTextColor(),
-            ),
+            icon: const Icon(Icons.share_outlined),
             onPressed: _showShareBottomSheet,
           ),
-          IconButton(
-            icon: Icon(
-              Icons.edit_outlined,
-              color: themeProvider.getPrimaryTextColor(),
-            ),
-            onPressed: _editCard,
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline, color: Colors.red),
-            onPressed: _deleteCard,
+          PopupMenuButton<String>(
+            tooltip: 'More actions',
+            onSelected: (value) {
+              if (value == 'edit') _editCard();
+              if (value == 'delete') _deleteCard();
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'edit',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.edit_outlined),
+                  title: Text('Edit card'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'delete',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.delete_outline, color: scheme.error),
+                  title: Text(
+                    'Delete card',
+                    style: TextStyle(color: scheme.error),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildCardWidget(primaryColor, secondaryColor, design),
-            const SizedBox(height: 32),
-            _buildDetailsSection(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCardWidget(Color primaryColor, Color secondaryColor, CardDesign? design) {
-    final bank = _card.bankId != null ? Banks.getById(_card.bankId!) : null;
-
-    // Several banks use pale brand colours, where white text washes out.
-    final isLight = primaryColor.computeLuminance() > 0.5;
-    final textColor = isLight ? Colors.black87 : Colors.white;
-    final subtleColor = isLight ? Colors.black54 : Colors.white70;
-    final faintColor = isLight ? Colors.black45 : Colors.white60;
-
-    return AspectRatio(
-      aspectRatio: 1.586,
-      child: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [primaryColor, secondaryColor],
-          ),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: primaryColor.withOpacity(0.3),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Stack(
-            children: [
-              if (design?.hasCircles ?? false) _buildCircles(),
-              _buildVerticalCategoryLabel(faintColor),
-              Positioned(
-                right: 18,
-                top: 0,
-                bottom: 0,
-                child: Center(
-                  child: Icon(
-                    Icons.contactless,
-                    color: subtleColor,
-                    size: 34,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth >= 900) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 460,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(AppSpacing.xl),
+                    child: _buildCardWidget(
+                      primaryColor,
+                      secondaryColor,
+                      design,
+                    ),
                   ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(25, 22, 12, 22),
+                const VerticalDivider(width: 1),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(AppSpacing.xl),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 720),
+                      child: _buildDetailsSection(),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          }
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: bank != null
-                                ? BankLogo(
-                                    bank: bank,
-                                    size: 30,
-                                    useSmall: false,
-                                    backgroundColor: primaryColor,
-                                    maxWidth: 150,
-                                  )
-                                : const SizedBox.shrink(),
-                          ),
-                        ),
-                        Expanded(
-                          child: Align(
-                            alignment: Alignment.centerRight,
-                            child: Text(
-                              _card.cardNickname ?? '',
-                              style: AppTypography.label(
-                                fontSize: 16,
-                                color: subtleColor,
-                              ),
-                              textAlign: TextAlign.right,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Spacer(),
-                    Transform.translate(
-                      offset: const Offset(0, 12),
-                      child: Text(
-                        _card.maskedCardNumber,
-                        style: AppTypography.mono(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w500,
-                          color: textColor,
-                          letterSpacing: 2,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        // Grouped in an Expanded row so the leftover width is
-                        // consumed here, keeping the network logo flush right.
-                        Expanded(
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Flexible(
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    _cardholderName?.toUpperCase() ?? '—',
-                                    style: AppTypography.label(
-                                      fontSize: 14,
-                                      color: textColor,
-                                    ),
-                                    maxLines: 1,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 28),
-                              _buildCardFaceField(
-                                label: 'Valid\nthru',
-                                // Mirrors the reveal state below, so the card
-                                // face can never leak the expiry ahead of
-                                // authentication.
-                                value: _isExpiryVisible
-                                    ? (_expiryDate ?? '**/**')
-                                    : '**/**',
-                                labelColor: faintColor,
-                                valueColor: textColor,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        // Fixed box so a short logo (RuPay renders wide and flat)
-                        // can't shrink the row and drag the card number down.
-                        SizedBox(
-                          height: 64,
-                          child: Align(
-                            alignment: Alignment.bottomRight,
-                            widthFactor: 1,
-                            // Square network SVGs centre their artwork, leaving
-                            // dead space below the mark; RuPay is tightly cropped.
-                            child: Transform.translate(
-                              offset: Offset(
-                                0,
-                                _network == CardNetwork.rupay ? 0 : 16,
-                              ),
-                              child: CardNetworkLogo(
-                                cardNumber: '',
-                                forceNetwork: _network,
-                                height: 64,
-                                maxWidth: 100,
-                                isInputField: false,
-                                backgroundColor: primaryColor,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                    _buildCardWidget(primaryColor, secondaryColor, design),
+                    const SizedBox(height: AppSpacing.xxl),
+                    _buildDetailsSection(),
                   ],
                 ),
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildVerticalCategoryLabel(Color color) {
-    return Positioned(
-      left: 4,
-      bottom: 22,
-      child: RotatedBox(
-        quarterTurns: 3,
-        child: Text(
-          '${_card.categoryName} Card'.toUpperCase(),
-          style: AppTypography.overline(fontSize: 9, color: color).copyWith(
-            fontWeight: FontWeight.w600,
-            letterSpacing: 1.5,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCardFaceField({
-    required String label,
-    required String value,
-    required Color labelColor,
-    required Color valueColor,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label.toUpperCase(),
-          style: AppTypography.overline(fontSize: 8, color: labelColor)
-              .copyWith(height: 1.2),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          value,
-          style: AppTypography.label(fontSize: 12, color: valueColor),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCircles() {
-    return Positioned.fill(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final circleSize = constraints.maxHeight * 0.6;
-          return Stack(
-            children: [
-              Positioned(
-                left: 20,
-                top: (constraints.maxHeight - circleSize) / 2,
-                child: Container(
-                  width: circleSize,
-                  height: circleSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFE85D3F).withOpacity(0.85),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 20 + circleSize * 0.5,
-                top: (constraints.maxHeight - circleSize) / 2,
-                child: Container(
-                  width: circleSize,
-                  height: circleSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFE85D3F).withOpacity(0.6),
-                  ),
-                ),
-              ),
-            ],
+            ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildCardWidget(
+    Color primaryColor,
+    Color secondaryColor,
+    CardDesign? design,
+  ) {
+    final bank = _card.bankId != null ? Banks.getById(_card.bankId!) : null;
+
+    final textColor =
+        design?.foregroundColor ??
+        (_card.customBackgroundImagePath?.isNotEmpty == true
+            ? CardContrast.ivory
+            : CardContrast.bestForeground([primaryColor, secondaryColor]));
+
+    final card = AspectRatio(
+      aspectRatio: 1.586,
+      child: CardBackgroundSurface(
+        design: design,
+        customGradientStartColor: _card.customGradientStartColor,
+        customGradientEndColor: _card.customGradientEndColor,
+        customGradientAngle: _card.customGradientAngle,
+        customBackgroundImagePath: _card.customBackgroundImagePath,
+        backgroundImageBlur: _card.backgroundImageBlur,
+        fallbackPrimaryColor: primaryColor,
+        fallbackSecondaryColor: secondaryColor,
+        borderRadius: BorderRadius.circular(20),
+        child: WalletCardFace(
+          bank: bank,
+          network: _network,
+          categoryName: _card.categoryName,
+          nickname: _card.cardNickname ?? '',
+          cardNumber: _card.maskedCardNumber,
+          cardholderName: _cardholderName ?? '—',
+          // Mirrors the reveal state below, so the card face can never leak
+          // the expiry date ahead of authentication.
+          expiryDate: _isExpiryVisible
+              ? (_expiryDate ?? CardData.hiddenExpiryDate)
+              : CardData.hiddenExpiryDate,
+          backgroundColor: primaryColor,
+          foregroundColor: textColor,
+        ),
+      ),
+    );
+
+    final cardWithHero = _card.id == null || AppMotion.reduceMotion(context)
+        ? card
+        : WalletCardHero(tag: 'wallet-card-${_card.id}', child: card);
+    final dragProgress = (_cardDragExtent / 360).clamp(0.0, 1.0);
+
+    return Listener(
+      key: const ValueKey('card-detail-swipe-target'),
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: _handleCardPointerDown,
+      onPointerMove: _handleCardPointerMove,
+      onPointerUp: _handleCardPointerUp,
+      onPointerCancel: _handleCardPointerCancel,
+      child: AnimatedContainer(
+        duration: _isDraggingCard
+            ? Duration.zero
+            : AppMotion.resolve(context, AppMotion.quick),
+        curve: AppMotion.standardCurve,
+        transformAlignment: Alignment.center,
+        transform: Matrix4.identity()
+          ..translateByDouble(0, _cardDragExtent, 0, 1)
+          ..scaleByDouble(
+            1 - (0.035 * dragProgress),
+            1 - (0.035 * dragProgress),
+            1,
+            1,
+          ),
+        child: cardWithHero,
       ),
     );
   }
@@ -572,9 +635,11 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Card Details',
-          style: AppTypography.appBarTitle(
+        _buildEditableSectionHeader(
+          title: 'Card Details',
+          iconKey: const ValueKey('edit-card-details'),
+          onEdit: () => _editCard(),
+          textStyle: AppTypography.appBarTitle(
             color: themeProvider.getPrimaryTextColor(),
           ),
         ),
@@ -584,45 +649,34 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
             icon: Icons.credit_card,
             label: 'Card Number',
             value: _isCardNumberVisible ? null : _card.maskedCardNumber,
-            futureValue: _isCardNumberVisible ? _card.getFormattedCardNumber() : null,
+            futureValue: _isCardNumberVisible
+                ? _card.getFormattedCardNumber()
+                : null,
             isVisible: _isCardNumberVisible,
             onToggle: _toggleCardNumberVisibility,
             onCopy: _copyCardNumber,
           ),
-          const Divider(height: 24),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _buildCompactSecretField(
-                  icon: Icons.calendar_today,
-                  label: 'Expiry Date',
-                  value: _isExpiryVisible ? null : '**/**',
-                  futureValue:
-                      _isExpiryVisible ? _card.getDecryptedExpiryDate() : null,
-                  isVisible: _isExpiryVisible,
-                  onToggle: _toggleExpiryVisibility,
-                  onCopy: _copyExpiry,
-                ),
-              ),
-              Container(
-                width: 1,
-                height: 44,
-                margin: const EdgeInsets.symmetric(horizontal: 12),
-                color: themeProvider.getSecondaryTextColor().withOpacity(0.15),
-              ),
-              Expanded(
-                child: _buildCompactSecretField(
-                  icon: Icons.lock_outline,
-                  label: 'CVV',
-                  value: _isCvvVisible ? null : '***',
-                  futureValue: _isCvvVisible ? _card.getDecryptedCvv() : null,
-                  isVisible: _isCvvVisible,
-                  onToggle: _toggleCvvVisibility,
-                  onCopy: _copyCvv,
-                ),
-              ),
-            ],
+          const Divider(height: 1),
+          _buildDetailRow(
+            icon: Icons.calendar_today,
+            label: 'Expiry Date',
+            value: _isExpiryVisible ? null : CardData.hiddenExpiryDate,
+            futureValue: _isExpiryVisible
+                ? _card.getDecryptedExpiryDate()
+                : null,
+            isVisible: _isExpiryVisible,
+            onToggle: _toggleExpiryVisibility,
+            onCopy: _copyExpiry,
+          ),
+          const Divider(height: 1),
+          _buildDetailRow(
+            icon: Icons.lock_outline,
+            label: 'Security code',
+            value: _isCvvVisible ? null : CardData.hiddenCvv,
+            futureValue: _isCvvVisible ? _card.getDecryptedCvv() : null,
+            isVisible: _isCvvVisible,
+            onToggle: _toggleCvvVisibility,
+            onCopy: _copyCvv,
           ),
         ]),
         _buildAdditionalInfoSection(),
@@ -650,9 +704,13 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 16),
-            Text(
-              'Additional Information',
-              style: AppTypography.sectionTitle(
+            _buildEditableSectionHeader(
+              title: 'Additional Information',
+              iconKey: const ValueKey('edit-additional-information'),
+              onEdit: () => _editCard(
+                initialSection: CardEditInitialSection.additionalInformation,
+              ),
+              textStyle: AppTypography.sectionTitle(
                 color: themeProvider.getPrimaryTextColor(),
               ),
             ),
@@ -698,6 +756,29 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
     );
   }
 
+  Widget _buildEditableSectionHeader({
+    required String title,
+    required Key iconKey,
+    required TextStyle textStyle,
+    required VoidCallback onEdit,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(title, style: textStyle),
+        const SizedBox(width: 4),
+        IconButton(
+          key: iconKey,
+          tooltip: 'Edit card',
+          visualDensity: VisualDensity.compact,
+          iconSize: 19,
+          onPressed: onEdit,
+          icon: const Icon(Icons.edit_outlined),
+        ),
+      ],
+    );
+  }
+
   Widget _buildInfoRowWithCopy(
     IconData icon,
     String label,
@@ -705,15 +786,14 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
     bool allowCopy = true,
   }) {
     final themeProvider = context.watch<ThemeProvider>();
-    
+    final scheme = Theme.of(context).colorScheme;
+
     return Row(
       children: [
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: themeProvider.isDarkMode
-                ? Colors.white.withOpacity(0.05)
-                : Colors.grey.shade100,
+            color: scheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(
@@ -757,20 +837,13 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
   }
 
   Widget _buildDetailCard(List<Widget> children) {
-    final themeProvider = context.watch<ThemeProvider>();
-    
+    final scheme = Theme.of(context).colorScheme;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: themeProvider.getCardColor(),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(24),
       ),
       child: Column(children: children),
     );
@@ -786,120 +859,73 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
     required VoidCallback onCopy,
   }) {
     final themeProvider = context.watch<ThemeProvider>();
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 14, color: themeProvider.getSecondaryTextColor()),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: AppTypography.caption(
-                color: themeProvider.getSecondaryTextColor(),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 2),
-        Row(
-          children: [
-            Expanded(
-              child: futureValue != null
-                  ? FutureBuilder<String?>(
-                      future: futureValue,
-                      builder: (context, snapshot) => Text(
-                        snapshot.data ?? '...',
-                        style: AppTypography.title(
-                          color: themeProvider.getPrimaryTextColor(),
-                        ),
-                      ),
-                    )
-                  : Text(
-                      value ?? '',
-                      style: AppTypography.title(
-                        color: themeProvider.getPrimaryTextColor(),
-                      ),
-                    ),
-            ),
-            _buildCompactIconButton(
-              icon: isVisible ? Icons.visibility_off : Icons.visibility,
-              tooltip: isVisible ? 'Hide' : 'Show',
-              onPressed: onToggle,
-            ),
-            _buildCompactIconButton(
-              icon: Icons.copy,
-              tooltip: 'Copy',
-              onPressed: onCopy,
-            ),
-          ],
-        ),
-      ],
-    );
-  }
+    final scheme = Theme.of(context).colorScheme;
 
-  /// Narrow variant of [_buildDetailRow] so two secret fields fit on one line.
-  Widget _buildCompactSecretField({
-    required IconData icon,
-    required String label,
-    String? value,
-    Future<String?>? futureValue,
-    required bool isVisible,
-    required VoidCallback onToggle,
-    required VoidCallback onCopy,
-  }) {
-    final themeProvider = context.watch<ThemeProvider>();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 14, color: themeProvider.getSecondaryTextColor()),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: AppTypography.caption(
-                color: themeProvider.getSecondaryTextColor(),
-              ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12),
             ),
-          ],
-        ),
-        const SizedBox(height: 2),
-        Row(
-          children: [
-            Expanded(
-              child: futureValue != null
-                  ? FutureBuilder<String?>(
-                      future: futureValue,
-                      builder: (context, snapshot) => Text(
-                        snapshot.data ?? '...',
-                        style: AppTypography.title(
-                          color: themeProvider.getPrimaryTextColor(),
+            child: Icon(
+              icon,
+              size: 20,
+              color: themeProvider.getSecondaryTextColor(),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: AppTypography.caption(
+                    color: themeProvider.getSecondaryTextColor(),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                AnimatedSwitcher(
+                  duration: AppMotion.resolve(context, AppMotion.quick),
+                  child: futureValue != null
+                      ? FutureBuilder<String?>(
+                          key: ValueKey('visible-$label'),
+                          future: futureValue,
+                          builder: (context, snapshot) => Text(
+                            snapshot.data ?? '…',
+                            style: AppTypography.title(
+                              color: themeProvider.getPrimaryTextColor(),
+                            ),
+                          ),
+                        )
+                      : Text(
+                          value ?? '',
+                          key: ValueKey('hidden-$label'),
+                          style: AppTypography.title(
+                            color: themeProvider.getPrimaryTextColor(),
+                          ),
                         ),
-                      ),
-                    )
-                  : Text(
-                      value ?? '',
-                      style: AppTypography.title(
-                        color: themeProvider.getPrimaryTextColor(),
-                      ),
-                    ),
+                ),
+              ],
             ),
-            _buildCompactIconButton(
-              icon: isVisible ? Icons.visibility_off : Icons.visibility,
-              tooltip: isVisible ? 'Hide' : 'Show',
-              onPressed: onToggle,
-            ),
-            _buildCompactIconButton(
-              icon: Icons.copy,
-              tooltip: 'Copy',
-              onPressed: onCopy,
-            ),
-          ],
-        ),
-      ],
+          ),
+          _buildCompactIconButton(
+            icon: isVisible ? Icons.visibility_off : Icons.visibility,
+            tooltip: isVisible ? 'Hide' : 'Show',
+            onPressed: onToggle,
+          ),
+          _buildCompactIconButton(
+            icon: Icons.copy,
+            tooltip: 'Copy',
+            onPressed: onCopy,
+          ),
+        ],
+      ),
     );
   }
 
@@ -916,21 +942,20 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
       onPressed: onPressed,
       padding: const EdgeInsets.all(4),
       visualDensity: VisualDensity.compact,
-      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
     );
   }
 
   Widget _buildInfoRow(IconData icon, String label, String value) {
     final themeProvider = context.watch<ThemeProvider>();
-    
+    final scheme = Theme.of(context).colorScheme;
+
     return Row(
       children: [
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: themeProvider.isDarkMode
-                ? Colors.white.withOpacity(0.05)
-                : Colors.grey.shade100,
+            color: scheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(
@@ -985,9 +1010,36 @@ class _ShareBottomSheetState extends State<_ShareBottomSheet> {
   bool _isLoading = false;
   bool _isExportingFile = false;
 
+  Future<bool> _authorize(ProtectedAction action, String reason) async {
+    final authentication =
+        context.read<AuthenticationCoordinator?>() ??
+        AuthenticationCoordinator();
+    final authenticated = await authentication.authorize(
+      action,
+      reason: reason,
+    );
+    if (!authenticated && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            authentication.lastErrorMessage ?? 'Authentication required',
+          ),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+    return authenticated;
+  }
+
   /// Shares the whole card as an encrypted `.cwbak` file: every field, the
   /// notes and the photos, so the recipient can import it as a real card.
   Future<void> _shareCardFile() async {
+    final authenticated = await _authorize(
+      ProtectedAction.exportCard,
+      'Authenticate to export this card as an encrypted file',
+    );
+    if (!authenticated || !mounted) return;
+
     final password = await promptBackupPassword(
       context,
       title: 'Share Card File',
@@ -1011,14 +1063,25 @@ class _ShareBottomSheetState extends State<_ShareBottomSheet> {
         Navigator.pop(context);
         await Share.shareXFiles(
           [XFile(filePath)],
-          subject: 'Card from Cards Wallet',
-          text: 'Import this file in Cards Wallet under Settings > Import Backup.',
+          subject: 'Card from CardVault',
+          text: 'Import this file in CardVault under Settings > Import Backup.',
+        );
+        AppLogService.instance.action(
+          'Card sharing',
+          'Encrypted card share sheet opened',
         );
       }
-    } catch (e) {
+    } catch (error) {
+      AppLogService.instance.record(
+        'Card sharing',
+        'Encrypted card export failed: $error',
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to share: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: const Text('The encrypted card file could not be shared.'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
         );
       }
     } finally {
@@ -1027,20 +1090,34 @@ class _ShareBottomSheetState extends State<_ShareBottomSheet> {
   }
 
   Future<void> _shareDetails() async {
-    if (!_shareCardNumber && !_shareExpiry && !_shareCvv && 
-        !_shareCardholder && !_shareAccountNumber && 
-        !_shareIfscCode && !_shareUpiId) {
+    if (!_shareCardNumber &&
+        !_shareExpiry &&
+        !_shareCvv &&
+        !_shareCardholder &&
+        !_shareAccountNumber &&
+        !_shareIfscCode &&
+        !_shareUpiId) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select at least one detail to share')),
+        const SnackBar(
+          content: Text('Please select at least one detail to share'),
+        ),
       );
       return;
     }
+
+    final authenticated = await _authorize(
+      ProtectedAction.shareCardDetails,
+      'Authenticate to share the selected protected card details',
+    );
+    if (!authenticated || !mounted) return;
 
     setState(() => _isLoading = true);
 
     try {
       final List<String> details = [];
-      final bank = widget.card.bankId != null ? Banks.getById(widget.card.bankId!) : null;
+      final bank = widget.card.bankId != null
+          ? Banks.getById(widget.card.bankId!)
+          : null;
 
       if (bank != null) {
         details.add('Bank: ${bank.name}');
@@ -1083,15 +1160,29 @@ class _ShareBottomSheetState extends State<_ShareBottomSheet> {
       }
 
       final shareText = details.join('\n');
-      
+
       if (mounted) {
         Navigator.pop(context);
         await Share.share(shareText, subject: 'Card Details');
+        AppLogService.instance.action(
+          'Card sharing',
+          'Protected-details share sheet opened',
+          details: {'fieldCount': details.length},
+        );
       }
-    } catch (e) {
+    } catch (error) {
+      AppLogService.instance.record(
+        'Card sharing',
+        'Protected-details sharing failed: $error',
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to share: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: const Text(
+              'The selected card details could not be shared.',
+            ),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
         );
       }
     } finally {
@@ -1108,11 +1199,11 @@ class _ShareBottomSheetState extends State<_ShareBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = context.watch<ThemeProvider>();
-    
+    final scheme = Theme.of(context).colorScheme;
+
     return Container(
       decoration: BoxDecoration(
-        color: themeProvider.getCardColor(),
+        color: scheme.surfaceContainerHigh,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
@@ -1129,7 +1220,7 @@ class _ShareBottomSheetState extends State<_ShareBottomSheet> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -1137,14 +1228,13 @@ class _ShareBottomSheetState extends State<_ShareBottomSheet> {
             const SizedBox(height: 20),
             Text(
               'Share Card Details',
-              style: AppTypography.pageTitle(
-                color: Colors.black87,
-              ).copyWith(fontSize: 22),
+              style: AppTypography.pageTitle(color: scheme.onSurface)
+                  .copyWith(fontSize: 22),
             ),
             const SizedBox(height: 8),
             Text(
               'Select the details you want to share',
-              style: AppTypography.subtitle(color: Colors.grey.shade600),
+              style: AppTypography.subtitle(color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 20),
             _buildShareOption(
@@ -1179,7 +1269,8 @@ class _ShareBottomSheetState extends State<_ShareBottomSheet> {
                   'Account Number',
                   Icons.account_balance_wallet,
                   _shareAccountNumber,
-                  (value) => setState(() => _shareAccountNumber = value ?? false),
+                  (value) =>
+                      setState(() => _shareAccountNumber = value ?? false),
                 );
               },
             ),
@@ -1211,35 +1302,19 @@ class _ShareBottomSheetState extends State<_ShareBottomSheet> {
             SizedBox(
               width: double.infinity,
               height: 54,
-              child: ElevatedButton(
+              child: FilledButton.icon(
                 onPressed: _isLoading ? null : _shareDetails,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: themeProvider.getPrimaryColor(),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  elevation: 0,
-                ),
-                child: _isLoading
-                    ? const SizedBox(
+                icon: _isLoading
+                    ? SizedBox(
                         width: 24,
                         height: 24,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                          color: scheme.onPrimary,
+                          strokeWidth: 2,
+                        ),
                       )
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.share, color: Colors.white, size: 20),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Share Selected Details',
-                            style: AppTypography.button(
-                              fontSize: 16,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
+                    : const Icon(Icons.share_outlined),
+                label: const Text('Share selected details'),
               ),
             ),
             const SizedBox(height: 12),
@@ -1249,18 +1324,14 @@ class _ShareBottomSheetState extends State<_ShareBottomSheet> {
               child: OutlinedButton(
                 onPressed: _isExportingFile ? null : _shareCardFile,
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: themeProvider.getPrimaryColor(),
-                  side: BorderSide(color: themeProvider.getPrimaryColor()),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
+                  foregroundColor: scheme.primary,
                 ),
                 child: _isExportingFile
                     ? SizedBox(
                         width: 24,
                         height: 24,
                         child: CircularProgressIndicator(
-                          color: themeProvider.getPrimaryColor(),
+                          color: scheme.primary,
                           strokeWidth: 2,
                         ),
                       )
@@ -1273,7 +1344,7 @@ class _ShareBottomSheetState extends State<_ShareBottomSheet> {
                             'Share Full Card File',
                             style: AppTypography.button(
                               fontSize: 16,
-                              color: themeProvider.getPrimaryColor(),
+                              color: scheme.primary,
                             ),
                           ),
                         ],
@@ -1283,8 +1354,8 @@ class _ShareBottomSheetState extends State<_ShareBottomSheet> {
             const SizedBox(height: 8),
             Text(
               'Sends an encrypted file with all details, notes and photos that the '
-              'recipient can import into Cards Wallet.',
-              style: AppTypography.caption(color: Colors.grey.shade600),
+              'recipient can import into CardVault.',
+              style: AppTypography.caption(color: scheme.onSurfaceVariant),
             ),
           ],
         ),
@@ -1298,24 +1369,20 @@ class _ShareBottomSheetState extends State<_ShareBottomSheet> {
     bool value,
     ValueChanged<bool?> onChanged,
   ) {
-    final themeProvider = context.watch<ThemeProvider>();
+    final scheme = Theme.of(context).colorScheme;
     return CheckboxListTile(
       value: value,
       onChanged: onChanged,
       title: Row(
         children: [
-          Icon(icon, size: 20, color: Colors.grey.shade700),
+          Icon(icon, size: 20, color: scheme.onSurfaceVariant),
           const SizedBox(width: 12),
-          Text(
-            label,
-            style: AppTypography.listItem(color: Colors.black87),
-          ),
+          Text(label, style: AppTypography.listItem(color: scheme.onSurface)),
         ],
       ),
       contentPadding: EdgeInsets.zero,
       controlAffinity: ListTileControlAffinity.trailing,
-      activeColor: themeProvider.getPrimaryColor(),
+      activeColor: scheme.primary,
     );
   }
 }
-

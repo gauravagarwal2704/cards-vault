@@ -3,21 +3,31 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
+
 import '../models/card_data.dart';
 import '../models/card_group.dart';
 import '../data/banks.dart';
 import '../data/card_designs.dart';
 import '../services/card_attachment_storage.dart';
+import '../services/card_background_storage.dart';
 import '../services/secure_card_storage.dart';
+import '../services/app_log_service.dart';
 import '../widgets/bank_logo.dart';
 import '../widgets/card_attachments.dart';
+import '../widgets/card_background_picker.dart';
+import '../widgets/card_background_preview_swiper.dart';
+import '../widgets/card_background_surface.dart';
 import '../widgets/group_picker_sheet.dart';
 import '../widgets/card_network_logo.dart';
 import '../widgets/wallet_card.dart';
+import '../widgets/wallet_card_face.dart';
 import '../utils/card_formatter.dart';
+import '../utils/card_contrast.dart';
 import '../utils/card_network_utils.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_typography.dart';
+import '../theme/app_spacing.dart';
 
 class ManualAddCardScreen extends StatefulWidget {
   const ManualAddCardScreen({super.key});
@@ -35,6 +45,7 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
   final _nicknameController = TextEditingController();
   final _cardStorage = SecureCardStorage();
   final _attachmentStorage = CardAttachmentStorage();
+  final _backgroundStorage = CardBackgroundStorage();
   List<File> _pendingAttachmentFiles = [];
 
   CardCategory _cardCategory = CardCategory.credit;
@@ -42,13 +53,28 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
   CardGroup? _selectedGroup;
   CardDesign? _selectedDesign;
   CardDesignStyle _selectedStyle = CardDesignStyle.gradient;
+  CardBackgroundMode _backgroundMode = CardBackgroundMode.catalog;
+  Color _customGradientStart = const Color(0xFF2563EB);
+  Color _customGradientEnd = const Color(0xFF8B5CF6);
+  double _customGradientAngle = 135;
+  String? _customBackgroundImagePath;
+  double _backgroundImageBlur = 0;
   bool _isLoading = false;
   Set<String> _existingCardholderNames = {};
   CardNetwork _detectedNetwork = CardNetwork.unknown;
 
+  double get _effectiveBackgroundImageBlur =>
+      (_backgroundMode == CardBackgroundMode.customImage &&
+              _customBackgroundImagePath?.isNotEmpty == true) ||
+          (_backgroundMode == CardBackgroundMode.catalog &&
+              _selectedDesign?.style == CardDesignStyle.image)
+      ? _backgroundImageBlur
+      : 0;
+
   @override
   void initState() {
     super.initState();
+    AppLogService.instance.action('Navigation', 'Opened manual card entry');
     _loadExistingCardholders();
   }
 
@@ -61,7 +87,7 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
     _nicknameController.dispose();
     super.dispose();
   }
-  
+
   Future<void> _loadExistingCardholders() async {
     try {
       final cards = await _cardStorage.loadCards();
@@ -81,20 +107,49 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
 
     setState(() => _isLoading = true);
 
+    String? savedBackgroundPath;
+    String? newCardId;
     try {
       final cardNumber = _cardNumberController.text.replaceAll(' ', '');
+      final cardIdForSave = const Uuid().v4();
+      newCardId = cardIdForSave;
+      if (_backgroundMode == CardBackgroundMode.customImage &&
+          _customBackgroundImagePath != null) {
+        savedBackgroundPath = await _backgroundStorage.saveBackground(
+          cardIdForSave,
+          File(_customBackgroundImagePath!),
+        );
+      }
       final card = await CardData.fromPlaintext(
         cardNumber: cardNumber,
         expiryDate: _expiryController.text,
-        cardholderName: _cardholderController.text.isEmpty ? null : _cardholderController.text,
+        cardholderName: _cardholderController.text.isEmpty
+            ? null
+            : _cardholderController.text,
         cvv: _cvvController.text.isEmpty ? null : _cvvController.text,
         cardType: _detectCardType(cardNumber),
+        id: cardIdForSave,
         savedDate: DateTime.now(),
         readMethod: ReadMethod.manual,
         cardCategory: _cardCategory,
         bankId: _selectedBank?.id,
-        cardNickname: _nicknameController.text.isEmpty ? null : _nicknameController.text,
-        designId: _selectedDesign?.id,
+        cardNickname: _nicknameController.text.isEmpty
+            ? null
+            : _nicknameController.text,
+        designId: _backgroundMode == CardBackgroundMode.catalog
+            ? _selectedDesign?.id
+            : null,
+        customGradientStartColor:
+            _backgroundMode == CardBackgroundMode.customGradient
+            ? _customGradientStart.toARGB32()
+            : null,
+        customGradientEndColor:
+            _backgroundMode == CardBackgroundMode.customGradient
+            ? _customGradientEnd.toARGB32()
+            : null,
+        customGradientAngle: _customGradientAngle,
+        customBackgroundImagePath: savedBackgroundPath,
+        backgroundImageBlur: _effectiveBackgroundImageBlur,
         groupId: _selectedGroup?.id,
       );
 
@@ -110,13 +165,32 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
         );
       }
 
+      AppLogService.instance.action(
+        'Cards',
+        'Card added manually',
+        details: {
+          'attachmentCount': _pendingAttachmentFiles.length,
+          'category': _cardCategory.name,
+        },
+      );
+
       if (mounted) {
         Navigator.pop(context, true);
       }
     } catch (e) {
+      AppLogService.instance.record('Cards', 'Manual card save failed: $e');
+      if (newCardId != null && savedBackgroundPath != null) {
+        await _backgroundStorage.deleteBackground(
+          newCardId,
+          savedBackgroundPath,
+        );
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save card: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Failed to save card: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
         );
       }
     } finally {
@@ -132,18 +206,10 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
     return CardNetworkUtils.formatCardNumber(text, _detectedNetwork);
   }
 
-  String _formatExpiry(String text) {
-    text = text.replaceAll('/', '');
-    if (text.length >= 2) {
-      return '${text.substring(0, 2)}/${text.substring(2)}';
-    }
-    return text;
-  }
-
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
-    
+
     return Scaffold(
       backgroundColor: themeProvider.getBackgroundColor(),
       appBar: AppBar(
@@ -163,263 +229,264 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
       ),
       body: Form(
         key: _formKey,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildPreviewCard(),
-              const SizedBox(height: 24),
-              _buildSectionTitle('Card Information'),
-              const SizedBox(height: 12),
-              _buildCardNumberField(),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(child: _buildExpiryField()),
-                  const SizedBox(width: 16),
-                  Expanded(child: _buildCvvField()),
-                ],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >= 900;
+            if (!wide) {
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 680),
+                    child: _buildEditorFields(includePreview: true),
+                  ),
+                ),
+              );
+            }
+
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 430,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(AppSpacing.xl),
+                    child: Column(
+                      children: [
+                        _buildPreviewCard(),
+                        const SizedBox(height: AppSpacing.md),
+                        Text(
+                          'Preview updates as you edit',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const VerticalDivider(width: 1),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(AppSpacing.xl),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 680),
+                      child: _buildEditorFields(includePreview: false),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Material(
+          color: Theme.of(context).colorScheme.surfaceContainer,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.sm,
+              AppSpacing.lg,
+              AppSpacing.md,
+            ),
+            child: Align(
+              heightFactor: 1,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 680),
+                child: _buildSaveButton(),
               ),
-              const SizedBox(height: 16),
-              _buildCardholderField(),
-              const SizedBox(height: 24),
-              _buildSectionTitle('Card Type'),
-              const SizedBox(height: 12),
-              _buildCardCategorySelector(),
-              const SizedBox(height: 24),
-              _buildSectionTitle('Bank'),
-              const SizedBox(height: 12),
-              _buildBankSelector(),
-              const SizedBox(height: 24),
-              _buildSectionTitle('Group'),
-              const SizedBox(height: 12),
-              GroupSelectorField(
-                selectedGroup: _selectedGroup,
-                onChanged: (group) => setState(() => _selectedGroup = group),
-              ),
-              const SizedBox(height: 24),
-              _buildSectionTitle('Card Nickname'),
-              const SizedBox(height: 12),
-              _buildNicknameField(),
-              const SizedBox(height: 24),
-              _buildSectionTitle('Card Design'),
-              const SizedBox(height: 12),
-              _buildDesignStyleSelector(),
-              const SizedBox(height: 12),
-              _buildDesignSelector(),
-              const SizedBox(height: 24),
-              _buildSectionTitle('Photos'),
-              const SizedBox(height: 12),
-              CardAttachmentsEditor(
-                cardId: null,
-                existingIds: const [],
-                pendingFiles: _pendingAttachmentFiles,
-                onExistingChanged: (_) {},
-                onPendingChanged: (files) => setState(() => _pendingAttachmentFiles = files),
-              ),
-              const SizedBox(height: 32),
-              _buildSaveButton(),
-              const SizedBox(height: 24),
-            ],
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildEditorFields({required bool includePreview}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (includePreview) ...[
+          _buildPreviewCard(),
+          const SizedBox(height: AppSpacing.xl),
+        ],
+        _buildSectionTitle('Card Information'),
+        const SizedBox(height: AppSpacing.sm),
+        _buildCardNumberField(),
+        const SizedBox(height: AppSpacing.md),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: _buildExpiryField()),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(child: _buildCvvField()),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _buildCardholderField(),
+        const SizedBox(height: AppSpacing.xl),
+        _buildSectionTitle('Card Type'),
+        const SizedBox(height: AppSpacing.sm),
+        _buildCardCategorySelector(),
+        const SizedBox(height: AppSpacing.xl),
+        _buildSectionTitle('Bank'),
+        const SizedBox(height: AppSpacing.sm),
+        _buildBankSelector(),
+        const SizedBox(height: AppSpacing.xl),
+        _buildSectionTitle('Group'),
+        const SizedBox(height: AppSpacing.sm),
+        GroupSelectorField(
+          selectedGroup: _selectedGroup,
+          onChanged: (group) => setState(() => _selectedGroup = group),
+        ),
+        const SizedBox(height: AppSpacing.xl),
+        _buildSectionTitle('Card Nickname'),
+        const SizedBox(height: AppSpacing.sm),
+        _buildNicknameField(),
+        const SizedBox(height: AppSpacing.xl),
+        _buildSectionTitle('Card Design'),
+        const SizedBox(height: AppSpacing.sm),
+        _buildCardBackgroundPicker(),
+        const SizedBox(height: AppSpacing.xl),
+        _buildSectionTitle('Photos'),
+        const SizedBox(height: AppSpacing.sm),
+        CardAttachmentsEditor(
+          cardId: null,
+          existingIds: const [],
+          pendingFiles: _pendingAttachmentFiles,
+          onExistingChanged: (_) {},
+          onPendingChanged: (files) =>
+              setState(() => _pendingAttachmentFiles = files),
+        ),
+        const SizedBox(height: AppSpacing.xxl),
+      ],
     );
   }
 
   Widget _buildPreviewCard() {
     final themeProvider = context.watch<ThemeProvider>();
-    final primaryColor = _selectedDesign?.primaryColor ?? 
-        _selectedBank?.primaryColor ?? 
+    final primaryColor =
+        _selectedDesign?.primaryColor ??
+        _selectedBank?.primaryColor ??
         themeProvider.getPrimaryColor();
-    final secondaryColor = _selectedDesign?.secondaryColor ?? 
-        _selectedBank?.secondaryColor ?? 
+    final secondaryColor =
+        _selectedDesign?.secondaryColor ??
+        _selectedBank?.secondaryColor ??
         themeProvider.getPrimaryContainerColor();
+    final foregroundColor = switch (_backgroundMode) {
+      CardBackgroundMode.catalog =>
+        _selectedDesign?.foregroundColor ??
+            CardContrast.bestForeground([primaryColor, secondaryColor]),
+      CardBackgroundMode.customGradient => CardContrast.bestForeground([
+        _customGradientStart,
+        _customGradientEnd,
+      ]),
+      CardBackgroundMode.customImage => CardContrast.ivory,
+    };
+    final faceBackgroundColor =
+        _backgroundMode == CardBackgroundMode.customGradient
+        ? _customGradientStart
+        : primaryColor;
 
-    return AspectRatio(
-      aspectRatio: 1.586,
-      child: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [primaryColor, secondaryColor],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: primaryColor.withOpacity(0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
+    return CardBackgroundPreviewSwiper(
+      enabled: _backgroundMode == CardBackgroundMode.catalog,
+      backgroundKey:
+          '${_backgroundMode.name}:${_selectedDesign?.id ?? 'default'}',
+      onCycle: _cyclePreviewBackground,
+      child: AspectRatio(
+        aspectRatio: 1.586,
+        child: CardBackgroundSurface(
+          design: _backgroundMode == CardBackgroundMode.catalog
+              ? _selectedDesign
+              : null,
+          customGradientStartColor:
+              _backgroundMode == CardBackgroundMode.customGradient
+              ? _customGradientStart.toARGB32()
+              : null,
+          customGradientEndColor:
+              _backgroundMode == CardBackgroundMode.customGradient
+              ? _customGradientEnd.toARGB32()
+              : null,
+          customGradientAngle: _customGradientAngle,
+          customBackgroundImagePath:
+              _backgroundMode == CardBackgroundMode.customImage
+              ? _customBackgroundImagePath
+              : null,
+          backgroundImageBlur: _effectiveBackgroundImageBlur,
+          fallbackPrimaryColor: primaryColor,
+          fallbackSecondaryColor: secondaryColor,
+          borderRadius: BorderRadius.circular(20),
+          child: WalletCardFace(
+            bank: _selectedBank,
+            network: _detectedNetwork,
+            categoryName: _cardCategory == CardCategory.credit
+                ? 'Credit'
+                : 'Debit',
+            nickname: _nicknameController.text,
+            cardNumber: _cardNumberController.text.isEmpty
+                ? CardData.hiddenCardNumber
+                : _formatCardNumber(_cardNumberController.text),
+            cardholderName: _cardholderController.text.isEmpty
+                ? 'YOUR NAME'
+                : _cardholderController.text,
+            expiryDate: _expiryController.text.isEmpty
+                ? 'MM/YY'
+                : _expiryController.text,
+            backgroundColor: faceBackgroundColor,
+            foregroundColor: foregroundColor,
           ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Stack(
-          children: [
-            if (_selectedDesign?.hasCircles ?? false) _buildCircles(),
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Text(
-                                _cardCategory == CardCategory.credit ? 'Credit' : 'Debit',
-                                style: AppTypography.cardName(color: Colors.white),
-                              ),
-                              Text(
-                                'Card',
-                                style: AppTypography.cardNameLight(color: Colors.white70),
-                              ),
-                            ],
-                          ),
-                          if (_nicknameController.text.isNotEmpty)
-                            Text(
-                              _nicknameController.text,
-                              style: AppTypography.caption(
-                                fontSize: 11,
-                                color: Colors.white60,
-                              ),
-                            ),
-                        ],
-                      ),
-                      Icon(Icons.contactless, color: Colors.white.withOpacity(0.7), size: 24),
-                    ],
-                  ),
-                  const Spacer(),
-                  Text(
-                    _cardNumberController.text.isEmpty
-                        ? '**** **** **** ****'
-                        : _formatCardNumber(_cardNumberController.text),
-                    style: AppTypography.mono(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Text(
-                        _cardholderController.text.isEmpty
-                            ? 'YOUR NAME'
-                            : _cardholderController.text.toUpperCase(),
-                        style: AppTypography.caption(
-                          color: Colors.white70,
-                        ).copyWith(fontWeight: FontWeight.w500),
-                      ),
-                      const Spacer(),
-                      Text(
-                        _expiryController.text.isEmpty ? 'MM/YY' : _expiryController.text,
-                        style: AppTypography.mono(
-                          fontSize: 12,
-                          color: Colors.white70,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
         ),
-      ),
       ),
     );
   }
 
-  Widget _buildCircles() {
-    return Positioned.fill(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final circleSize = constraints.maxHeight * 0.5;
-          return Stack(
-            children: [
-              Positioned(
-                left: 16,
-                top: (constraints.maxHeight - circleSize) / 2,
-                child: Container(
-                  width: circleSize,
-                  height: circleSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFE85D3F).withOpacity(0.85),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 16 + circleSize * 0.5,
-                top: (constraints.maxHeight - circleSize) / 2,
-                child: Container(
-                  width: circleSize,
-                  height: circleSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFE85D3F).withOpacity(0.6),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
+  void _cyclePreviewBackground(int direction) {
+    if (_backgroundMode != CardBackgroundMode.catalog) return;
+
+    setState(() {
+      _selectedDesign = CardDesigns.cycle(
+        style: _selectedStyle,
+        currentId: _selectedDesign?.id,
+        direction: direction,
+      );
+    });
   }
 
   Widget _buildSectionTitle(String title) {
     final themeProvider = context.watch<ThemeProvider>();
     return Text(
       title,
-      style: AppTypography.title(
-        color: themeProvider.getPrimaryTextColor(),
-      ),
+      style: AppTypography.title(color: themeProvider.getPrimaryTextColor()),
     );
   }
 
   Widget _buildCardNumberField() {
     final themeProvider = context.watch<ThemeProvider>();
-    
+
     return TextFormField(
       controller: _cardNumberController,
       keyboardType: TextInputType.number,
-      inputFormatters: [
-        CardNumberFormatter(network: _detectedNetwork),
-      ],
+      inputFormatters: [CardNumberFormatter(network: _detectedNetwork)],
       decoration: _inputDecoration('Card Number', Icons.credit_card).copyWith(
         suffixIcon: Padding(
           padding: const EdgeInsets.all(8.0),
           child: CardNetworkLogo(
             cardNumber: _cardNumberController.text,
             height: 18,
-            isInputField: true,
           ),
         ),
       ),
-      style: AppTypography.mono(
-        fontSize: 16,
-        letterSpacing: 1,
-        color: themeProvider.getPrimaryTextColor(),
-      ),
+      style: AppTypography.bodyLarge(color: themeProvider.getPrimaryTextColor())
+          .copyWith(letterSpacing: 0.8),
       onChanged: (value) {
         final cleaned = value.replaceAll(' ', '');
         final newNetwork = CardNetworkUtils.detectNetwork(cleaned);
-        if (newNetwork != _detectedNetwork) {
-          setState(() {
-            _detectedNetwork = newNetwork;
-          });
-        }
+        setState(() => _detectedNetwork = newNetwork);
       },
       validator: (value) {
         if (value == null || value.isEmpty) return 'Required';
@@ -433,7 +500,7 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
 
   Widget _buildExpiryField() {
     final themeProvider = context.watch<ThemeProvider>();
-    
+
     return TextFormField(
       controller: _expiryController,
       keyboardType: TextInputType.number,
@@ -443,8 +510,7 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
         ExpiryDateFormatter(),
       ],
       decoration: _inputDecoration('MM/YY', Icons.calendar_today),
-      style: AppTypography.mono(
-        fontSize: 16,
+      style: AppTypography.bodyLarge(
         color: themeProvider.getPrimaryTextColor(),
       ),
       onChanged: (value) {
@@ -462,7 +528,7 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
     final themeProvider = context.watch<ThemeProvider>();
     final cvvLength = CardNetworkUtils.getCvvLength(_detectedNetwork);
     final cvvLabel = CardNetworkUtils.getCvvLabel(_detectedNetwork);
-    
+
     return TextFormField(
       controller: _cvvController,
       keyboardType: TextInputType.number,
@@ -473,8 +539,7 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
         CvvFormatter(network: _detectedNetwork),
       ],
       decoration: _inputDecoration(cvvLabel, Icons.lock_outline),
-      style: AppTypography.mono(
-        fontSize: 16,
+      style: AppTypography.bodyLarge(
         color: themeProvider.getPrimaryTextColor(),
       ),
       validator: (value) {
@@ -493,14 +558,15 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
 
   Widget _buildCardholderField() {
     final themeProvider = context.watch<ThemeProvider>();
-    
+
     return Autocomplete<String>(
       optionsBuilder: (TextEditingValue textEditingValue) {
         if (textEditingValue.text.isEmpty) {
           return const Iterable<String>.empty();
         }
-        return _existingCardholderNames.where((name) =>
-          name.toLowerCase().contains(textEditingValue.text.toLowerCase())
+        return _existingCardholderNames.where(
+          (name) =>
+              name.toLowerCase().contains(textEditingValue.text.toLowerCase()),
         );
       },
       optionsViewBuilder: (context, onSelected, options) {
@@ -513,7 +579,10 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
               shadowColor: Colors.black26,
               borderRadius: BorderRadius.circular(12),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 200, maxWidth: 400),
+                constraints: const BoxConstraints(
+                  maxHeight: 200,
+                  maxWidth: 400,
+                ),
                 child: ListView.builder(
                   padding: EdgeInsets.zero,
                   shrinkWrap: true,
@@ -524,7 +593,10 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
                       onTap: () => onSelected(option),
                       borderRadius: BorderRadius.circular(12),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                         child: Text(
                           option,
                           style: AppTypography.listItem(
@@ -549,7 +621,7 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
         if (controller.text != _cardholderController.text) {
           controller.text = _cardholderController.text;
         }
-        
+
         return TextFormField(
           controller: controller,
           focusNode: focusNode,
@@ -569,7 +641,7 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
 
   Widget _buildNicknameField() {
     final themeProvider = context.watch<ThemeProvider>();
-    
+
     return TextFormField(
       controller: _nicknameController,
       decoration: _inputDecoration('e.g., ICICI Coral, Axis Priority', null),
@@ -581,44 +653,31 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
   }
 
   InputDecoration _inputDecoration(String hint, IconData? icon) {
-    final themeProvider = context.watch<ThemeProvider>();
-    final isDark = themeProvider.isDarkMode;
-    
+    final scheme = Theme.of(context).colorScheme;
+
     return InputDecoration(
       hintText: hint,
-      hintStyle: AppTypography.style(
-        color: isDark ? Colors.grey.shade600 : Colors.grey.shade400,
-      ),
-      prefixIcon: icon != null ? Icon(
-        icon, 
-        color: isDark ? Colors.grey.shade400 : Colors.grey.shade500,
-      ) : null,
+      hintStyle: AppTypography.style(color: scheme.onSurfaceVariant),
+      prefixIcon: icon != null
+          ? Icon(icon, color: scheme.onSurfaceVariant)
+          : null,
       filled: true,
       fillColor: Colors.transparent,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(
-          color: isDark ? Colors.white.withOpacity(0.2) : const Color(0xFFD1D5DB),
-          width: 1.5,
-        ),
+        borderSide: BorderSide(color: scheme.outline, width: 1.5),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(
-          color: isDark ? Colors.white.withOpacity(0.2) : const Color(0xFFD1D5DB),
-          width: 1.5,
-        ),
+        borderSide: BorderSide(color: scheme.outline, width: 1.5),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(
-          color: isDark ? themeProvider.getPrimaryColor() : const Color(0xFF374151),
-          width: 2,
-        ),
+        borderSide: BorderSide(color: scheme.primary, width: 2),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Colors.red, width: 1.5),
+        borderSide: BorderSide(color: scheme.error, width: 1.5),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
     );
@@ -635,30 +694,14 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
   }
 
   Widget _buildCategoryChip(CardCategory category, String label) {
-    final themeProvider = context.watch<ThemeProvider>();
-    final isDark = themeProvider.isDarkMode;
     final isSelected = _cardCategory == category;
-    return GestureDetector(
-      onTap: () => setState(() => _cardCategory = category),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF374151) : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? const Color(0xFF374151) : (isDark ? Colors.white.withOpacity(0.2) : const Color(0xFFD1D5DB)),
-            width: 1.5,
-          ),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: AppTypography.label(
-              color: isSelected ? Colors.white : themeProvider.getPrimaryTextColor(),
-            ),
-          ),
-        ),
+    return ChoiceChip(
+      selected: isSelected,
+      label: SizedBox(
+        width: double.infinity,
+        child: Text(label, textAlign: TextAlign.center),
       ),
+      onSelected: (_) => setState(() => _cardCategory = category),
     );
   }
 
@@ -669,7 +712,9 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
       children: [
         Text(
           'Popular Banks',
-          style: AppTypography.caption(color: themeProvider.getSecondaryTextColor()),
+          style: AppTypography.caption(
+            color: themeProvider.getSecondaryTextColor(),
+          ),
         ),
         const SizedBox(height: 8),
         Wrap(
@@ -678,44 +723,17 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
           children: Banks.popular.map((bank) => _buildBankChip(bank)).toList(),
         ),
         const SizedBox(height: 16),
-        GestureDetector(
-          onTap: () => _showBankSelectionModal(),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.transparent,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: context.watch<ThemeProvider>().isDarkMode 
-                    ? Colors.white.withOpacity(0.2) 
-                    : const Color(0xFFD1D5DB),
-                width: 1.5,
-              ),
-            ),
-            child: Row(
-              children: [
-                if (_selectedBank != null) ...[
-                  BankLogo(bank: _selectedBank, size: 24, useSmall: true),
-                  const SizedBox(width: 12),
-                ],
-                Expanded(
-                  child: Text(
-                    _selectedBank?.name ?? 'Select Bank',
-                    style: AppTypography.bodyLarge(
-                      color: _selectedBank != null
-                          ? context.watch<ThemeProvider>().getPrimaryTextColor()
-                          : (context.watch<ThemeProvider>().isDarkMode 
-                              ? Colors.grey.shade600 
-                              : Colors.grey.shade400),
-                    ),
-                  ),
-                ),
-                Icon(
-                  Icons.arrow_drop_down,
-                  color: context.watch<ThemeProvider>().getSecondaryTextColor(),
-                ),
-              ],
-            ),
+        Material(
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(16),
+          clipBehavior: Clip.antiAlias,
+          child: ListTile(
+            onTap: _showBankSelectionModal,
+            leading: _selectedBank == null
+                ? const Icon(Icons.account_balance_outlined)
+                : BankLogo(bank: _selectedBank, size: 24, useSmall: true),
+            title: Text(_selectedBank?.name ?? 'Select bank'),
+            trailing: const Icon(Icons.arrow_drop_down),
           ),
         ),
       ],
@@ -723,143 +741,74 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
   }
 
   Widget _buildBankChip(BankInfo bank) {
-    final themeProvider = context.watch<ThemeProvider>();
-    final isDark = themeProvider.isDarkMode;
     final isSelected = _selectedBank?.id == bank.id;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedBank = bank),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected ? bank.primaryColor.withOpacity(0.15) : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected ? bank.primaryColor : (isDark ? Colors.white.withOpacity(0.2) : const Color(0xFFD1D5DB)),
-            width: 1.5,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            BankLogo(bank: bank, size: 18, useSmall: true),
-            const SizedBox(width: 6),
-            Text(
-              bank.shortName,
-              style: AppTypography.label(
-                fontSize: 11,
-                color: isSelected ? bank.primaryColor : themeProvider.getPrimaryTextColor(),
-              ),
-            ),
-          ],
-        ),
+    final scheme = Theme.of(context).colorScheme;
+    final selectedBackground = Color.alphaBlend(
+      bank.primaryColor.withValues(
+        alpha: scheme.brightness == Brightness.dark ? 0.28 : 0.14,
       ),
+      scheme.surfaceContainerHighest,
+    );
+
+    return ChoiceChip(
+      selected: isSelected,
+      avatar: BankLogo(bank: bank, size: 18, useSmall: true),
+      label: Text(bank.shortName),
+      backgroundColor: scheme.surfaceContainerHighest,
+      selectedColor: selectedBackground,
+      showCheckmark: false,
+      side: BorderSide(
+        color: isSelected ? bank.primaryColor : scheme.outlineVariant,
+        width: isSelected ? 1.5 : 1,
+      ),
+      onSelected: (_) => setState(() => _selectedBank = bank),
     );
   }
 
-  Widget _buildDesignStyleSelector() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: CardDesignStyle.values.map((style) {
-          final isSelected = _selectedStyle == style;
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _selectedStyle = style;
-                  _selectedDesign = null;
-                });
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  color: isSelected ? const Color(0xFF374151) : Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isSelected ? const Color(0xFF374151) : const Color(0xFFD1D5DB),
-                  ),
-                ),
-                child: Text(
-                  CardDesigns.getStyleName(style),
-                  style: AppTypography.label(
-                    color: isSelected ? Colors.white : Colors.black87,
-                  ).copyWith(fontWeight: FontWeight.w500),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
+  Widget _buildCardBackgroundPicker() {
+    return CardBackgroundPicker(
+      mode: _backgroundMode,
+      selectedStyle: _selectedStyle,
+      selectedDesign: _selectedDesign,
+      gradientStart: _customGradientStart,
+      gradientEnd: _customGradientEnd,
+      gradientAngle: _customGradientAngle,
+      customImagePath: _customBackgroundImagePath,
+      backgroundImageBlur: _backgroundImageBlur,
+      onModeChanged: (mode) => setState(() => _backgroundMode = mode),
+      onStyleChanged: (style) {
+        setState(() {
+          _selectedStyle = style;
+          _selectedDesign = null;
+        });
+      },
+      onDesignChanged: (design) => setState(() => _selectedDesign = design),
+      onGradientChanged: (start, end) {
+        setState(() {
+          _customGradientStart = start;
+          _customGradientEnd = end;
+        });
+      },
+      onGradientAngleChanged: (angle) =>
+          setState(() => _customGradientAngle = angle),
+      onCustomImageChanged: (path) =>
+          setState(() => _customBackgroundImagePath = path),
+      onBackgroundImageBlurChanged: (blur) =>
+          setState(() => _backgroundImageBlur = blur),
     );
-  }
-
-  Widget _buildDesignSelector() {
-    final designs = CardDesigns.getByStyle(_selectedStyle);
-    return SizedBox(
-      height: 80,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: designs.length,
-        itemBuilder: (context, index) {
-          final design = designs[index];
-          final isSelected = _selectedDesign?.id == design.id;
-          return Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: GestureDetector(
-              onTap: () => setState(() => _selectedDesign = design),
-              child: Container(
-                width: 100,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [design.primaryColor, design.secondaryColor],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  border: isSelected
-                      ? Border.all(color: Colors.white, width: 3)
-                      : null,
-                  boxShadow: isSelected
-                      ? [
-                          BoxShadow(
-                            color: design.primaryColor.withOpacity(0.4),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ]
-                      : null,
-                ),
-                child: Center(
-                  child: Text(
-                    design.name.split(' ').first,
-                    style: AppTypography.label(
-                      fontSize: 11,
-                      color: _isLightColor(design.primaryColor)
-                          ? Colors.black87
-                          : Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  bool _isLightColor(Color color) {
-    return color.computeLuminance() > 0.5;
   }
 
   void _showBankSelectionModal() {
     final TextEditingController searchController = TextEditingController();
     List<BankInfo> filteredBanks = Banks.allSorted;
     const double bankTileExtent = 60;
-    final selectedIndex = filteredBanks.indexWhere((b) => b.id == _selectedBank?.id);
+    final selectedIndex = filteredBanks.indexWhere(
+      (b) => b.id == _selectedBank?.id,
+    );
     final scrollController = ScrollController(
-      initialScrollOffset: selectedIndex > 0 ? selectedIndex * bankTileExtent : 0,
+      initialScrollOffset: selectedIndex > 0
+          ? selectedIndex * bankTileExtent
+          : 0,
     );
     final themeProvider = context.read<ThemeProvider>();
     final sheetColor = themeProvider.getCardColor();
@@ -885,7 +834,9 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
                 height: MediaQuery.of(context).size.height * 0.75,
                 decoration: BoxDecoration(
                   color: sheetColor,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
                 ),
                 child: Column(
                   children: [
@@ -896,7 +847,9 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
                           Expanded(
                             child: Text(
                               'Select Bank',
-                              style: AppTypography.sectionTitle(color: primaryText),
+                              style: AppTypography.sectionTitle(
+                                color: primaryText,
+                              ),
                             ),
                           ),
                           IconButton(
@@ -917,7 +870,11 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
                           final bank = filteredBanks[index];
                           final isSelected = _selectedBank?.id == bank.id;
                           return ListTile(
-                            leading: BankLogo(bank: bank, size: 32, useSmall: true),
+                            leading: BankLogo(
+                              bank: bank,
+                              size: 32,
+                              useSmall: true,
+                            ),
                             title: Text(
                               bank.name,
                               style: AppTypography.body(color: primaryText),
@@ -961,7 +918,10 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
                             borderRadius: BorderRadius.circular(16),
                             borderSide: BorderSide(color: accent, width: 2),
                           ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
                         ),
                         onChanged: (value) {
                           setModalState(() {
@@ -969,9 +929,15 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
                               filteredBanks = Banks.allSorted;
                             } else {
                               filteredBanks = Banks.allSorted
-                                  .where((bank) =>
-                                      bank.name.toLowerCase().contains(value.toLowerCase()) ||
-                                      bank.shortName.toLowerCase().contains(value.toLowerCase()))
+                                  .where(
+                                    (bank) =>
+                                        bank.name.toLowerCase().contains(
+                                          value.toLowerCase(),
+                                        ) ||
+                                        bank.shortName.toLowerCase().contains(
+                                          value.toLowerCase(),
+                                        ),
+                                  )
                                   .toList();
                             }
                           });
@@ -992,31 +958,24 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
   }
 
   Widget _buildSaveButton() {
+    final scheme = Theme.of(context).colorScheme;
     return SizedBox(
       width: double.infinity,
-      height: 54,
-      child: ElevatedButton(
+      height: 56,
+      child: FilledButton.icon(
         onPressed: _isLoading ? null : _saveCard,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF374151),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          elevation: 0,
-        ),
-        child: _isLoading
-            ? const SizedBox(
+        icon: _isLoading
+            ? SizedBox(
                 width: 24,
                 height: 24,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-              )
-            : Text(
-                'Save Card',
-                style: AppTypography.button(
-                  fontSize: 16,
-                  color: Colors.white,
+                child: CircularProgressIndicator(
+                  color: scheme.onPrimary,
+                  strokeWidth: 2,
                 ),
-              ),
+              )
+            : const Icon(Icons.check_rounded),
+        label: const Text('Save card'),
       ),
     );
   }
 }
-

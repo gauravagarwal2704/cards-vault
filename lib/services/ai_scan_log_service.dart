@@ -9,6 +9,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'ai_scan_settings_service.dart';
 
 class AiScanLogEntry {
+  static const redactedRequestBody =
+      '(Request payload omitted from diagnostics. Image bytes, OCR text, file '
+      'paths, credentials, and card fields are never retained.)';
+  static const redactedResponseBody =
+      '(Provider response body omitted from diagnostics. Extracted card '
+      'values and provider error payloads are never retained.)';
+
   final String id;
   final DateTime createdAt;
   final AiScanProvider provider;
@@ -37,20 +44,48 @@ class AiScanLogEntry {
     this.validationSummary,
   });
 
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'created_at': createdAt.toUtc().toIso8601String(),
-    'provider': provider.name,
-    'model': model,
-    'endpoint': endpoint,
-    'http_status': httpStatus,
-    'succeeded': succeeded,
-    'message': message,
-    'request_summary': requestSummary,
-    'request_body': requestBody,
-    'response_body': responseBody,
-    'validation_summary': validationSummary,
-  };
+  /// Returns a strict field-allowlisted representation suitable for storage
+  /// or display. No caller-provided diagnostic payload is retained.
+  AiScanLogEntry redacted() => AiScanLogEntry(
+    id: '${createdAt.toUtc().microsecondsSinceEpoch}-${provider.name}',
+    createdAt: createdAt,
+    provider: provider,
+    model: provider.modelLabel,
+    endpoint: switch (provider) {
+      AiScanProvider.gemini =>
+        'https://generativelanguage.googleapis.com/v1beta/interactions',
+      AiScanProvider.openAi => 'https://api.openai.com/v1/responses',
+    },
+    httpStatus: httpStatus,
+    succeeded: succeeded,
+    message: succeeded
+        ? 'Provider response received and validated.'
+        : httpStatus == null
+        ? 'Provider request failed before a response was received.'
+        : 'Provider request failed with HTTP $httpStatus.',
+    requestSummary: 'Only provider, model, timestamp, HTTP status, and outcome are retained.',
+    requestBody: redactedRequestBody,
+    responseBody: redactedResponseBody,
+    validationSummary: validationSummary == null ? null : 'Provider fields were validated locally; extracted values are omitted.',
+  );
+
+  Map<String, dynamic> toJson() {
+    final safe = redacted();
+    return {
+      'id': safe.id,
+      'created_at': safe.createdAt.toUtc().toIso8601String(),
+      'provider': safe.provider.name,
+      'model': safe.model,
+      'endpoint': safe.endpoint,
+      'http_status': safe.httpStatus,
+      'succeeded': safe.succeeded,
+      'message': safe.message,
+      'request_summary': safe.requestSummary,
+      'request_body': safe.requestBody,
+      'response_body': safe.responseBody,
+      'validation_summary': safe.validationSummary,
+    };
+  }
 
   factory AiScanLogEntry.fromJson(Map<String, dynamic> json) {
     final providerName = json['provider'] as String?;
@@ -73,7 +108,7 @@ class AiScanLogEntry {
       requestBody: json['request_body'] as String? ?? '',
       responseBody: json['response_body'] as String? ?? '',
       validationSummary: json['validation_summary'] as String?,
-    );
+    ).redacted();
   }
 }
 
@@ -109,7 +144,18 @@ class AiScanLogService {
 
   Future<bool> isLoggingEnabled() async {
     final preferences = await SharedPreferences.getInstance();
-    return preferences.getBool(_loggingEnabledKey) ?? true;
+    final stored = preferences.getBool(_loggingEnabledKey);
+    if (stored == null) {
+      // Earlier releases enabled retention implicitly. An unset preference is
+      // therefore not consent; remove any history created under that default.
+      try {
+        await clear();
+      } catch (_) {
+        // Retention remains disabled even if platform storage is unavailable.
+      }
+      return false;
+    }
+    return stored;
   }
 
   Future<void> setLoggingEnabled(bool enabled) async {
@@ -125,13 +171,26 @@ class AiScanLogService {
       final plaintext = await _decrypt(encrypted);
       final decoded = jsonDecode(plaintext);
       if (decoded is! List) return const [];
-      return decoded
+      final entries = decoded
           .whereType<Map>()
           .map(
             (entry) =>
                 AiScanLogEntry.fromJson(Map<String, dynamic>.from(entry)),
           )
           .toList();
+      final safePlaintext = jsonEncode(
+        entries.map((entry) => entry.toJson()).toList(),
+      );
+      if (safePlaintext != plaintext) {
+        try {
+          await file.writeAsString(await _encrypt(safePlaintext), flush: true);
+        } catch (_) {
+          // If legacy diagnostics cannot be migrated safely, retaining them is
+          // riskier than losing non-essential troubleshooting history.
+          if (await file.exists()) await file.delete();
+        }
+      }
+      return entries;
     } catch (_) {
       // A corrupt or key-inaccessible log must never block scanning.
       return const [];
@@ -141,7 +200,10 @@ class AiScanLogService {
   Future<void> append(AiScanLogEntry entry) async {
     if (!await isLoggingEnabled()) return;
     final entries = await load();
-    final retained = [entry, ...entries].take(maximumEntries).toList();
+    final retained = [
+      entry.redacted(),
+      ...entries,
+    ].take(maximumEntries).toList();
     final plaintext = jsonEncode(
       retained.map((item) => item.toJson()).toList(),
     );

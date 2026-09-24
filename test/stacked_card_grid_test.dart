@@ -105,7 +105,7 @@ void main() {
     expect(_tileOpacity(tester, 'Axis'), 1.0);
   });
 
-  testWidgets('changing the grouping axis replays the animation', (
+  testWidgets('changing the grouping axis swaps without a fade flicker', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -118,9 +118,8 @@ void main() {
     );
     await tester.pump();
 
-    // The new arrangement starts transparent and settles into place.
-    expect(_tileOpacity(tester, 'Credit'), 0.0);
-    await tester.pumpAndSettle();
+    // The previous axis is removed in the same frame and the next one is fully
+    // visible, rather than cross-fading two differently shaped grids.
     expect(_tileOpacity(tester, 'Credit'), 1.0);
     expect(find.text('Axis'), findsNothing);
   });

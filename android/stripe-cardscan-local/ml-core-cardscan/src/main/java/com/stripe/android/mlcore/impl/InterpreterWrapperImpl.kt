@@ -34,9 +34,6 @@ class InterpreterWrapperImpl : InterpreterWrapper {
 
 private fun InterpreterOptionsWrapper.toInterpreterOptions(): Interpreter.Options {
     val ret = Interpreter.Options()
-    useNNAPI?.let {
-        ret.setUseNNAPI(it)
-    }
     numThreads?.let {
         ret.setNumThreads(it)
     }

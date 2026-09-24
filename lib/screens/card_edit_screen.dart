@@ -14,6 +14,7 @@ import '../services/secure_card_storage.dart';
 import '../services/encryption_service.dart';
 import '../services/card_attachment_storage.dart';
 import '../services/card_background_storage.dart';
+import '../services/app_log_service.dart';
 import '../widgets/bank_logo.dart';
 import '../widgets/card_attachments.dart';
 import '../widgets/card_background_picker.dart';
@@ -100,6 +101,11 @@ class _CardEditScreenState extends State<CardEditScreen> {
   @override
   void initState() {
     super.initState();
+    AppLogService.instance.action(
+      'Navigation',
+      'Opened card editor',
+      details: {'mode': widget.card == null ? 'newFromScan' : 'edit'},
+    );
     _cardNumberController = TextEditingController();
     _expiryController = TextEditingController();
     _cvvController = TextEditingController();
@@ -372,6 +378,14 @@ class _CardEditScreenState extends State<CardEditScreen> {
         );
 
         await _cardStorage.updateCard(updatedCard);
+        AppLogService.instance.action(
+          'Cards',
+          'Card updated',
+          details: {
+            'attachmentCount': updatedCard.attachmentIds.length,
+            'category': updatedCard.cardCategory.name,
+          },
+        );
 
         if (originalBackgroundPath != null &&
             originalBackgroundPath != persistedBackgroundPath) {
@@ -423,10 +437,16 @@ class _CardEditScreenState extends State<CardEditScreen> {
         );
 
         if (mounted) {
+          AppLogService.instance.action(
+            'Cards',
+            'Scanned card review completed',
+            details: {'category': card.cardCategory.name},
+          );
           Navigator.pop(context, card);
         }
       }
     } catch (e) {
+      AppLogService.instance.record('Cards', 'Card save failed: $e');
       if (targetCardId != null && newlyStoredBackgroundPath != null) {
         await _backgroundStorage.deleteBackground(
           targetCardId,
@@ -560,6 +580,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
         _buildCardNumberField(),
         const SizedBox(height: AppSpacing.md),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(child: _buildExpiryField()),
             const SizedBox(width: AppSpacing.md),
@@ -739,7 +760,6 @@ class _CardEditScreenState extends State<CardEditScreen> {
           child: CardNetworkLogo(
             cardNumber: _cardNumberController.text,
             height: 18,
-            isInputField: true,
           ),
         ),
       ),

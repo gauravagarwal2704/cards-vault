@@ -5,6 +5,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 
 void main() {
+  test('card display decode widths are bounded and shared across frames', () {
+    expect(ImageUtils.cardDisplayCacheWidth(350, 3), 1280);
+    expect(ImageUtils.cardDisplayCacheWidth(351, 3), 1280);
+    expect(ImageUtils.cardDisplayCacheWidth(1000, 4), 2048);
+    expect(ImageUtils.cardDisplayCacheWidth(double.infinity, 2), isNull);
+    expect(ImageUtils.cardDisplayCacheWidth(350, 0), isNull);
+  });
+
   test('phone-sized card crops retain real quality measurements', () async {
     final tempDirectory = await Directory.systemTemp.createTemp(
       'card_quality_test_',

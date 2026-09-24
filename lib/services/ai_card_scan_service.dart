@@ -97,23 +97,12 @@ class AiScanDiagnostics {
   }
 
   static String safeResponseBody(String body) {
-    var safe = body
-        .replaceAll(
-          RegExp(r'Bearer\s+[A-Za-z0-9._\-]+', caseSensitive: false),
-          'Bearer [REDACTED]',
-        )
-        .replaceAll(RegExp(r'sk-[A-Za-z0-9_\-]{8,}'), 'sk-[REDACTED]')
-        .replaceAll(RegExp(r'AIza[A-Za-z0-9_\-]{16,}'), 'AIza[REDACTED]');
-    try {
-      safe = const JsonEncoder.withIndent('  ').convert(jsonDecode(safe));
-    } catch (_) {
-      // Provider errors are not guaranteed to be JSON. Show their text as-is.
-    }
-    const maximumCharacters = 16000;
-    if (safe.length > maximumCharacters) {
-      safe = '${safe.substring(0, maximumCharacters)}\n… response truncated';
-    }
-    return safe.trim().isEmpty ? '(Empty response body)' : safe.trim();
+    if (body.trim().isEmpty) return '(Empty response body)';
+    // The provider body can contain a PAN, expiry, cardholder name, OCR
+    // fragments, credentials, request IDs, or implementation details. Keep no
+    // part of it in production diagnostics; status and outcome are recorded as
+    // separate allowlisted fields.
+    return AiScanLogEntry.redactedResponseBody;
   }
 }
 
@@ -269,9 +258,18 @@ Use null for any field that is not clearly visible. Return only the requested sc
     required AiScanSettings settings,
     AiScanAttemptCallback? onAttempt,
   }) async {
-    if (!settings.isConfigured) {
+    if (!settings.enabled) {
+      throw const AiCardScanException('SmartAI scanning is not enabled.');
+    }
+    if (!settings.hasApiKey) {
       throw const AiCardScanException(
         'Smart scanning is enabled, but no provider key is configured.',
+      );
+    }
+    if (!settings.hasProcessingConsent) {
+      throw AiCardScanException(
+        'Explicit ${settings.provider.label} processing consent is required '
+        'before card images can leave this device.',
       );
     }
 

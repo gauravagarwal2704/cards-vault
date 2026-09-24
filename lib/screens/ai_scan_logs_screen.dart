@@ -27,7 +27,9 @@ class _AiScanLogsScreenState extends State<AiScanLogsScreen> {
   }
 
   Future<void> _load() async {
-    final logs = await (widget.logLoader?.call() ?? _logService.load());
+    final logs = (await (widget.logLoader?.call() ?? _logService.load()))
+        .map((entry) => entry.redacted())
+        .toList(growable: false);
     if (!mounted) return;
     setState(() {
       _logs = logs;
@@ -97,7 +99,7 @@ class _AiScanLogsScreenState extends State<AiScanLogsScreen> {
           Text(entry.requestSummary),
           const SizedBox(height: 14),
           const Text(
-            'Request body (image data omitted)',
+            'Request payload',
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
@@ -121,9 +123,7 @@ class _AiScanLogsScreenState extends State<AiScanLogsScreen> {
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 4),
-          const Text(
-            'May contain the full card number. API credentials are redacted.',
-          ),
+          const Text('Sensitive values and provider payloads are omitted.'),
           const SizedBox(height: 8),
           _codeBlock(
             context,

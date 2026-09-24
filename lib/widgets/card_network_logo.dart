@@ -8,7 +8,6 @@ class CardNetworkLogo extends StatelessWidget {
   final String cardNumber;
   final double height;
   final CardNetwork? forceNetwork;
-  final bool isInputField;
   final Color? backgroundColor;
   final double? maxWidth;
 
@@ -17,7 +16,6 @@ class CardNetworkLogo extends StatelessWidget {
     required this.cardNumber,
     this.height = 24,
     this.forceNetwork,
-    this.isInputField = false,
     this.backgroundColor,
     this.maxWidth,
   });
@@ -71,7 +69,6 @@ class CardNetworkLogo extends StatelessWidget {
   bool _shouldUseWhiteOnDark(CardNetwork network) {
     switch (network) {
       case CardNetwork.visa:
-      case CardNetwork.amex:
       case CardNetwork.discover:
       case CardNetwork.jcb:
       case CardNetwork.rupay:
@@ -79,6 +76,7 @@ class CardNetworkLogo extends StatelessWidget {
       case CardNetwork.unionPay:
       case CardNetwork.dinersClub:
         return true;
+      case CardNetwork.amex:
       case CardNetwork.mastercard:
       case CardNetwork.gpay:
       case CardNetwork.unknown:
@@ -111,9 +109,7 @@ class CardNetworkLogo extends StatelessWidget {
       case CardNetwork.mastercard:
         return 'assets/networks/mastercard.svg';
       case CardNetwork.amex:
-        return isInputField
-            ? 'assets/networks/amex-small.svg'
-            : 'assets/networks/amex.svg';
+        return 'assets/networks/amex-small.svg';
       case CardNetwork.discover:
         return 'assets/networks/discover.svg';
       case CardNetwork.jcb:

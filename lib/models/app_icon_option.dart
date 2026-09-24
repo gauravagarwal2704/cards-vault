@@ -21,7 +21,7 @@ class AppIconCatalog {
     id: 'three_d',
     label: '3D',
     description: 'Dimensional violet',
-    assetPath: 'assets/branding/app_icon_3d.png',
+    assetPath: 'assets/branding/app_icon_3d.webp',
     isThreeDimensional: true,
   );
 
@@ -31,37 +31,37 @@ class AppIconCatalog {
       id: 'purple',
       label: 'Purple',
       description: 'Royal violet',
-      assetPath: 'assets/branding/app_icon_purple.png',
+      assetPath: 'assets/branding/app_icon_purple.webp',
     ),
     AppIconOption(
       id: 'multicolor',
       label: 'Multicolor',
       description: 'Indigo and teal',
-      assetPath: 'assets/branding/app_icon_multicolor.png',
+      assetPath: 'assets/branding/app_icon_multicolor.webp',
     ),
     AppIconOption(
       id: 'ocean',
       label: 'Ocean',
       description: 'Navy and cyan',
-      assetPath: 'assets/branding/app_icon_ocean.png',
+      assetPath: 'assets/branding/app_icon_ocean.webp',
     ),
     AppIconOption(
       id: 'emerald',
       label: 'Emerald',
       description: 'Green and mint',
-      assetPath: 'assets/branding/app_icon_emerald.png',
+      assetPath: 'assets/branding/app_icon_emerald.webp',
     ),
     AppIconOption(
       id: 'sunset',
       label: 'Sunset',
       description: 'Plum and orange',
-      assetPath: 'assets/branding/app_icon_sunset.png',
+      assetPath: 'assets/branding/app_icon_sunset.webp',
     ),
     AppIconOption(
       id: 'red',
       label: 'Red',
       description: 'Burgundy and crimson',
-      assetPath: 'assets/branding/app_icon_red.png',
+      assetPath: 'assets/branding/app_icon_red.webp',
     ),
   ];
 

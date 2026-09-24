@@ -1,0 +1,26 @@
+{
+  "packagedDirectories": {
+    "assets/branding/": [".webp", ".svg"],
+    "assets/banks-logo-small/": [".svg"],
+    "assets/banks-logo-large/": [".svg"],
+    "assets/networks/": [".svg"],
+    "assets/card_backgrounds/gradient/": [".webp"],
+    "assets/card_backgrounds/dual_tone/": [".webp"],
+    "assets/card_backgrounds/abstract/": [".webp"],
+    "assets/card_backgrounds/designer_2/": [".webp"],
+    "assets/card_backgrounds/gradient_blur/": [".webp"],
+    "assets/card_backgrounds/glassmorphism/": [".webp"],
+    "assets/card_backgrounds/monochrome/": [".webp"],
+    "assets/card_backgrounds/image/": [".webp"]
+  },
+  "packagedFiles": [
+    "assets/fonts/Outfit-Light.ttf",
+    "assets/fonts/Outfit-Regular.ttf",
+    "assets/fonts/Outfit-Medium.ttf",
+    "assets/fonts/Outfit-SemiBold.ttf",
+    "assets/fonts/Outfit-Bold.ttf"
+  ],
+  "sourceOnlyFiles": [
+    "assets/fonts/README.md"
+  ]
+}

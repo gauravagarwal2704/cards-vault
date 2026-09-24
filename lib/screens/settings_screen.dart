@@ -2,10 +2,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/theme_provider.dart';
 import '../providers/app_lock_provider.dart';
@@ -13,6 +16,7 @@ import '../providers/profile_provider.dart';
 import '../providers/app_icon_provider.dart';
 import '../services/secure_card_storage.dart';
 import '../services/auth_service.dart';
+import '../services/app_log_service.dart';
 import '../models/theme_config.dart' as config;
 
 import 'package:package_info_plus/package_info_plus.dart';
@@ -23,9 +27,10 @@ import '../theme/app_shapes.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/backup_password_dialog.dart';
 import '../widgets/app_icon_artwork.dart';
+import '../utils/debug_logger.dart';
 import 'appearance_screen.dart';
-import 'ai_scan_settings_screen.dart';
 import 'developer_options_screen.dart';
+import 'privacy_policy_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, this.onCardsChanged});
@@ -37,8 +42,19 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  static const String _developerOptionsEnabledKey = 'developer_options_enabled';
+  static final Uri _repositoryUrl = Uri.parse(
+    'https://github.com/gauravagarwal2704/cards-wallet',
+  );
+  static final Uri _telegramUrl = Uri.parse('https://t.me/gauravagarwal27');
+  static final Uri _buyMeACoffeeUrl = Uri.parse(
+    'https://buymeacoffee.com/gauravagarwal',
+  );
+  static final Uri _buyMeAChaiUrl = Uri.parse(
+    'https://buymeachai.in/gauravagarwal',
+  );
+
   final SecureCardStorage _cardStorage = SecureCardStorage();
-  final AuthService _authService = AuthService();
   bool _isExporting = false;
   bool _isImporting = false;
   bool _isDeletingAll = false;
@@ -52,14 +68,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    AppLogService.instance.action('Navigation', 'Opened Settings');
+    _loadDeveloperOptionsPreference();
     _loadData();
   }
 
+  Future<void> _loadDeveloperOptionsPreference() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final enabled = preferences.getBool(_developerOptionsEnabledKey) ?? false;
+      DebugLogger.setEnabled(enabled);
+      if (!mounted) return;
+      setState(() => _developerOptionsUnlocked = enabled);
+    } catch (error) {
+      AppLogService.instance.record(
+        'Settings',
+        'Developer options preference load failed: ${error.runtimeType}',
+      );
+    }
+  }
+
   Future<void> _loadData() async {
+    final authentication =
+        context.read<AuthenticationCoordinator?>() ??
+        AuthenticationCoordinator();
     final lastBackup = await _cardStorage.getLastBackupDate();
     final count = await _cardStorage.getCardCount();
-    final biometrics = await _authService.getAvailableBiometrics();
-
+    final biometrics = await authentication.getAvailableBiometrics();
     try {
       final packageInfo = await PackageInfo.fromPlatform();
       if (!mounted) return;
@@ -107,6 +142,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (name != null && mounted) {
       await profile.setDisplayName(name);
+      AppLogService.instance.action('Settings', 'Display name updated');
     }
   }
 
@@ -144,6 +180,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       await _cardStorage.deleteAllCards();
+      AppLogService.instance.action(
+        'Cards',
+        'Deleted all cards',
+        details: {'count': count},
+      );
       await widget.onCardsChanged?.call();
       if (!mounted) return;
       setState(() {
@@ -157,6 +198,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
     } catch (e) {
+      AppLogService.instance.record('Cards', 'Delete all cards failed: $e');
       if (!mounted) return;
       setState(() => _isDeletingAll = false);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -315,6 +357,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _exportBackup() async {
+    final authentication =
+        context.read<AuthenticationCoordinator?>() ??
+        AuthenticationCoordinator();
+    final authenticated = await authentication.authorize(
+      ProtectedAction.exportVault,
+    );
+    if (!authenticated || !mounted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              authentication.lastErrorMessage ?? 'Authentication required',
+            ),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+      return;
+    }
+
     final photosBytes = await _cardStorage.getPhotosSizeInBytes();
     if (!mounted) return;
 
@@ -336,6 +398,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         password,
         includePhotos: includePhotos,
       );
+      AppLogService.instance.action(
+        'Backup',
+        'Backup exported',
+        details: {'includePhotos': includePhotos},
+      );
 
       if (mounted) {
         await _loadData();
@@ -356,6 +423,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       }
     } catch (e) {
+      AppLogService.instance.record('Backup', 'Backup export failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -422,6 +490,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         password,
         mode: mode,
       );
+      AppLogService.instance.action(
+        'Backup',
+        'Backup imported',
+        details: {'mode': mode.name, 'count': importedCount},
+      );
 
       if (mounted) {
         await widget.onCardsChanged?.call();
@@ -440,6 +513,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       }
     } catch (e) {
+      AppLogService.instance.record('Backup', 'Backup import failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -455,7 +529,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  void _handleVersionTap() {
+  Future<void> _handleVersionTap() async {
     if (_developerOptionsUnlocked) return;
     final taps = _versionTapCount + 1;
     if (taps >= 5) {
@@ -463,6 +537,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _versionTapCount = 5;
         _developerOptionsUnlocked = true;
       });
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setBool(_developerOptionsEnabledKey, true);
+      DebugLogger.setEnabled(true);
+      AppLogService.instance.action('Settings', 'Developer options enabled');
+      if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
@@ -480,6 +559,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
     }
+  }
+
+  Future<void> _setAppLockEnabled(
+    AppLockProvider appLockProvider,
+    bool enabled,
+  ) async {
+    final authentication =
+        context.read<AuthenticationCoordinator?>() ??
+        AuthenticationCoordinator();
+    final authenticated = await authentication.authorize(
+      ProtectedAction.changeSecuritySettings,
+      reason: enabled
+          ? 'Authenticate to enable app lock'
+          : 'Authenticate to disable app lock',
+    );
+    if (!authenticated || !mounted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              authentication.lastErrorMessage ?? 'Authentication required',
+            ),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+      return;
+    }
+    await appLockProvider.setAppLockEnabled(enabled);
+  }
+
+  Future<void> _openExternalLink(Uri url, String destination) async {
+    AppLogService.instance.action(
+      'Settings',
+      'External link requested',
+      details: {'destination': destination},
+    );
+    try {
+      final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+      if (opened || !mounted) return;
+    } catch (_) {
+      if (!mounted) return;
+    }
+
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('Could not open $destination')));
+  }
+
+  void _showOpenSourceLicenses() {
+    showLicensePage(
+      context: context,
+      applicationName: 'CardVault',
+      applicationVersion: _appVersion.isEmpty ? '1.2.1' : _appVersion,
+      applicationLegalese: 'Open-source software licenses',
+    );
+  }
+
+  void _showPrivacyPolicy() {
+    AppLogService.instance.action('Navigation', 'Opened privacy policy');
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()),
+    );
   }
 
   @override
@@ -530,10 +672,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           const SizedBox(height: AppSpacing.sm),
                           _buildSecuritySection(appLockProvider, isDark),
                           const SizedBox(height: AppSpacing.xl),
-                          _buildSectionTitle('Smart scan', isDark),
-                          const SizedBox(height: AppSpacing.sm),
-                          _buildSmartScanSection(isDark),
-                          const SizedBox(height: AppSpacing.xl),
                           _buildSectionTitle('Backup & restore', isDark),
                           const SizedBox(height: AppSpacing.sm),
                           _buildBackupSection(isDark),
@@ -541,6 +679,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           _buildSectionTitle('Data', isDark),
                           const SizedBox(height: AppSpacing.sm),
                           _buildDataSection(isDark),
+                          const SizedBox(height: AppSpacing.xl),
+                          _buildSectionTitle('About', isDark),
+                          const SizedBox(height: AppSpacing.sm),
+                          _buildAboutSection(),
                           if (_developerOptionsUnlocked) ...[
                             const SizedBox(height: AppSpacing.xl),
                             _buildDeveloperOptionsEntry(isDark),
@@ -709,9 +851,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 Switch(
                   value: appLockProvider.isAppLockEnabled,
-                  onChanged: (value) {
-                    appLockProvider.setAppLockEnabled(value);
-                  },
+                  onChanged: (value) =>
+                      _setAppLockEnabled(appLockProvider, value),
                   thumbColor: WidgetStateProperty.resolveWith((states) {
                     if (states.contains(WidgetState.selected)) {
                       return scheme.onPrimary;
@@ -735,50 +876,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildSmartScanSection(bool isDark) {
-    final themeProvider = context.watch<ThemeProvider>();
-    final scheme = Theme.of(context).colorScheme;
-    final secondary = themeProvider.getSecondaryTextColor();
-    return _buildCard(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const AiScanSettingsScreen()),
-          );
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Icon(Icons.auto_awesome_outlined, color: secondary),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Smart AI scan',
-                      style: AppTypography.listItem(color: scheme.onSurface)
-                          .copyWith(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Providers, saved keys, and encrypted scan logs',
-                      style: AppTypography.caption(color: secondary),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right, color: secondary),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -903,7 +1000,119 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ),
+        const SizedBox(height: 14),
+        _buildHeaderLinks(),
       ],
+    );
+  }
+
+  Widget _buildHeaderLinks() {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 400),
+      child: Row(
+        key: const ValueKey('about-links-row'),
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Expanded(
+            child: _buildHeaderLink(
+              key: const ValueKey('github-repository-link'),
+              label: 'GitHub',
+              backgroundColor: const Color(0xFF24292F),
+              icon: SvgPicture.asset(
+                'assets/branding/github-mark.svg',
+                key: const ValueKey('github-logo'),
+                width: 25,
+                height: 25,
+              ),
+              onTap: () => _openExternalLink(_repositoryUrl, 'GitHub'),
+            ),
+          ),
+          Expanded(
+            child: _buildHeaderLink(
+              key: const ValueKey('telegram-link'),
+              label: 'Telegram',
+              backgroundColor: const Color(0xFF229ED9),
+              icon: const Icon(Icons.telegram, size: 25, color: Colors.white),
+              onTap: () => _openExternalLink(_telegramUrl, 'Telegram'),
+            ),
+          ),
+          Expanded(
+            child: _buildHeaderLink(
+              key: const ValueKey('buy-me-a-coffee-link'),
+              label: 'Coffee',
+              backgroundColor: const Color(0xFFFFDD00),
+              icon: const Icon(
+                Icons.coffee_rounded,
+                size: 25,
+                color: Color(0xFF1A1A1A),
+              ),
+              onTap: () =>
+                  _openExternalLink(_buyMeACoffeeUrl, 'Buy Me a Coffee'),
+            ),
+          ),
+          Expanded(
+            child: _buildHeaderLink(
+              key: const ValueKey('buy-me-a-chai-link'),
+              label: 'Chai',
+              backgroundColor: const Color(0xFFDE6B35),
+              icon: const Icon(
+                Icons.emoji_food_beverage_rounded,
+                size: 25,
+                color: Colors.white,
+              ),
+              onTap: () => _openExternalLink(_buyMeAChaiUrl, 'Buy Me a Chai'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeaderLink({
+    required Key key,
+    required String label,
+    required Color backgroundColor,
+    required Widget icon,
+    required VoidCallback onTap,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Semantics(
+      button: true,
+      label: 'Open $label',
+      child: InkWell(
+        key: key,
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: backgroundColor,
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: icon,
+              ),
+              const SizedBox(height: 7),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.fade,
+                softWrap: false,
+                textAlign: TextAlign.center,
+                style: AppTypography.caption(color: scheme.onSurface)
+                    .copyWith(fontWeight: FontWeight.w600, fontSize: 11),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -919,6 +1128,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             MaterialPageRoute(builder: (_) => const DeveloperOptionsScreen()),
           );
           if (disabled == true && mounted) {
+            final preferences = await SharedPreferences.getInstance();
+            await preferences.setBool(_developerOptionsEnabledKey, false);
+            DebugLogger.setEnabled(false);
+            AppLogService.instance.action(
+              'Settings',
+              'Developer options disabled',
+            );
+            if (!mounted) return;
             setState(() {
               _developerOptionsUnlocked = false;
               _versionTapCount = 0;
@@ -998,6 +1215,76 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Icon(Icons.chevron_right, color: secondary),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAboutSection() {
+    return _buildCard(
+      child: Column(
+        children: [
+          _buildAboutRow(
+            key: const ValueKey('privacy-policy-link'),
+            icon: Icons.privacy_tip_outlined,
+            title: 'Privacy policy',
+            subtitle: 'How CardVault handles your data',
+            trailingIcon: Icons.chevron_right,
+            onTap: _showPrivacyPolicy,
+          ),
+          const Divider(height: 1),
+          _buildAboutRow(
+            key: const ValueKey('open-source-licenses-link'),
+            icon: Icons.article_outlined,
+            title: 'Open-source licenses',
+            subtitle: 'Libraries and licenses used by CardVault',
+            trailingIcon: Icons.chevron_right,
+            onTap: _showOpenSourceLicenses,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAboutRow({
+    required Key key,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required IconData trailingIcon,
+    required VoidCallback onTap,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final secondary = scheme.onSurfaceVariant;
+
+    return InkWell(
+      key: key,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(icon, color: secondary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: AppTypography.listItem(color: scheme.onSurface)
+                        .copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: AppTypography.caption(color: secondary),
+                  ),
+                ],
+              ),
+            ),
+            Icon(trailingIcon, size: 19, color: secondary),
+          ],
         ),
       ),
     );

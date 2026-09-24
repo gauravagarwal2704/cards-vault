@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/card_group.dart';
 import 'secure_card_storage.dart';
+import 'app_log_service.dart';
 
 class CardGroupStorage {
   static final CardGroupStorage _instance = CardGroupStorage._internal();
@@ -36,7 +37,13 @@ class CardGroupStorage {
         (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
       );
       return groups;
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogService.instance.recordFailure(
+        'Load card groups',
+        e,
+        stackTrace,
+        category: 'Failure/Storage',
+      );
       return [];
     }
   }
@@ -50,42 +57,60 @@ class CardGroupStorage {
   }
 
   Future<CardGroup> createGroup(String name, {int? colorValue}) async {
-    final group = CardGroup(
-      id: const Uuid().v4(),
-      name: name.trim(),
-      colorValue: colorValue,
-      createdAt: DateTime.now(),
-    );
+    return AppLogService.instance.trace(
+      'Storage',
+      'Create card group',
+      () async {
+        final group = CardGroup(
+          id: const Uuid().v4(),
+          name: name.trim(),
+          colorValue: colorValue,
+          createdAt: DateTime.now(),
+        );
 
-    final groups = await loadGroups();
-    groups.add(group);
-    await _persist(groups);
-    return group;
+        final groups = await loadGroups();
+        groups.add(group);
+        await _persist(groups);
+        return group;
+      },
+    );
   }
 
   Future<void> renameGroup(String groupId, String name) async {
-    final groups = await loadGroups();
-    final index = groups.indexWhere((g) => g.id == groupId);
-    if (index == -1) return;
+    return AppLogService.instance.trace(
+      'Storage',
+      'Rename card group',
+      () async {
+        final groups = await loadGroups();
+        final index = groups.indexWhere((g) => g.id == groupId);
+        if (index == -1) return;
 
-    groups[index] = groups[index].copyWith(name: name.trim());
-    await _persist(groups);
+        groups[index] = groups[index].copyWith(name: name.trim());
+        await _persist(groups);
+      },
+    );
   }
 
   /// Removes the group and detaches every card that referenced it, so no card is
   /// left pointing at a group that no longer exists.
   Future<void> deleteGroup(String groupId) async {
-    final groups = await loadGroups();
-    groups.removeWhere((g) => g.id == groupId);
-    await _persist(groups);
+    return AppLogService.instance.trace(
+      'Storage',
+      'Delete card group',
+      () async {
+        final groups = await loadGroups();
+        groups.removeWhere((g) => g.id == groupId);
+        await _persist(groups);
 
-    final cardStorage = SecureCardStorage();
-    final cards = await cardStorage.loadCards();
-    for (final card in cards) {
-      if (card.groupId == groupId && card.id != null) {
-        await cardStorage.updateCard(card.copyWith(clearGroup: true));
-      }
-    }
+        final cardStorage = SecureCardStorage();
+        final cards = await cardStorage.loadCards();
+        for (final card in cards) {
+          if (card.groupId == groupId && card.id != null) {
+            await cardStorage.updateCard(card.copyWith(clearGroup: true));
+          }
+        }
+      },
+    );
   }
 
   Future<void> deleteAllGroups() async {

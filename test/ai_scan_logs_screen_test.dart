@@ -41,7 +41,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Provider response'), findsOneWidget);
-    expect(find.textContaining('unavailable'), findsWidgets);
+    expect(find.text(AiScanLogEntry.redactedResponseBody), findsOneWidget);
+    expect(find.textContaining('unavailable'), findsNothing);
     expect(find.byType(AlertDialog), findsNothing);
   });
 }

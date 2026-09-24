@@ -10,6 +10,7 @@ import '../models/card_group.dart';
 import '../services/card_group_storage.dart';
 import '../services/secure_card_storage.dart';
 import '../services/ocr_service.dart';
+import '../services/app_log_service.dart';
 import '../providers/card_view_provider.dart';
 import '../providers/nfc_provider.dart';
 import '../providers/theme_provider.dart';
@@ -18,7 +19,6 @@ import '../widgets/card_tiles_grid.dart';
 import '../widgets/group_picker_sheet.dart';
 import '../widgets/stacked_card_grid.dart';
 import '../widgets/infinite_card_deck.dart';
-import '../widgets/floating_add_menu.dart';
 import '../widgets/bank_logo.dart';
 import '../data/banks.dart';
 import '../utils/nfc_availability_prompt.dart';
@@ -43,6 +43,230 @@ class SavedCardsScreen extends StatefulWidget {
 
   @override
   State<SavedCardsScreen> createState() => _SavedCardsScreenState();
+}
+
+String _cardholderKey(String name) =>
+    name.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+
+String _cardholderLabel(String name) {
+  final normalized = name.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+  final result = StringBuffer();
+  var capitalizeNext = true;
+
+  for (final rune in normalized.runes) {
+    final character = String.fromCharCode(rune);
+    final isLetter = character.toUpperCase() != character.toLowerCase();
+    result.write(
+      capitalizeNext && isLetter ? character.toUpperCase() : character,
+    );
+    if (isLetter) capitalizeNext = false;
+    if (character == ' ' || character == '-' || character == "'") {
+      capitalizeNext = true;
+    }
+  }
+
+  return result.toString();
+}
+
+class _CustomStackGuidance extends StatefulWidget {
+  const _CustomStackGuidance();
+
+  @override
+  State<_CustomStackGuidance> createState() => _CustomStackGuidanceState();
+}
+
+class _CustomStackGuidanceState extends State<_CustomStackGuidance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    duration: const Duration(milliseconds: 6000),
+    vsync: this,
+  );
+  bool? _reduceMotion;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reduceMotion = AppMotion.reduceMotion(context);
+    if (_reduceMotion == reduceMotion) return;
+    _reduceMotion = reduceMotion;
+    if (reduceMotion) {
+      _controller
+        ..stop()
+        ..value = 0.84;
+    } else {
+      _controller
+        ..value = 0
+        ..repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final semantic = AppSemanticColors.of(context);
+
+    return Padding(
+      key: const ValueKey('custom-stack-guidance'),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: AppSurface(
+        color: semantic.infoContainer,
+        foregroundColor: semantic.onInfoContainer,
+        shape: AppShapes.medium,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        semanticLabel:
+            'Two cards are dragged one after another onto a custom stack. '
+            'Animated demonstration.',
+        child: Row(
+          children: [
+            _CustomStackDragDemo(
+              animation: _controller,
+              color: semantic.onInfoContainer,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Drag a card onto another to create a stack.',
+                key: const ValueKey('custom-stack-guidance-text'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.label(
+                  fontSize: 12,
+                  color: semantic.onInfoContainer,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CustomStackDragDemo extends StatelessWidget {
+  final Animation<double> animation;
+  final Color color;
+
+  const _CustomStackDragDemo({required this.animation, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      key: const ValueKey('custom-stack-drag-demo'),
+      width: 66,
+      height: 34,
+      child: AnimatedBuilder(
+        animation: animation,
+        builder: (context, child) {
+          final phase = animation.value;
+          double progress(double start, double end) => Curves.easeInOutCubic
+              .transform(((phase - start) / (end - start)).clamp(0.0, 1.0));
+
+          final topTravel = progress(0.12, 0.36);
+          final bottomTravel = progress(0.52, 0.76);
+          final bottomOpacity = progress(0.48, 0.52);
+          final cycleOpacity = switch (phase) {
+            < 0.04 => 0.0,
+            < 0.08 => progress(0.04, 0.08),
+            < 0.90 => 1.0,
+            < 0.96 => 1 - progress(0.90, 0.96),
+            _ => 0.0,
+          };
+
+          const stackLeft = 40.0;
+          const stackTop = 9.0;
+          final topLeft = 2 + (stackLeft - 2) * topTravel;
+          final topTop = (stackTop - 4) * topTravel;
+          final bottomLeft = 2 + (stackLeft - 2) * bottomTravel;
+          final bottomTop = 19 + (stackTop + 4 - 19) * bottomTravel;
+
+          final movingTopCard = phase < 0.46;
+          final handVisible =
+              (phase >= 0.09 && phase <= 0.39) ||
+              (phase >= 0.49 && phase <= 0.79);
+          final handLeft = movingTopCard ? topLeft + 8 : bottomLeft + 8;
+          final handTop = movingTopCard ? topTop + 10 : bottomTop + 10;
+
+          return Opacity(
+            key: const ValueKey('custom-stack-demo-cycle'),
+            opacity: cycleOpacity,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: bottomLeft,
+                  top: bottomTop,
+                  child: Opacity(
+                    key: const ValueKey('custom-stack-demo-bottom-card'),
+                    opacity: bottomOpacity,
+                    child: _DemoCard(
+                      color: color.withValues(alpha: 0.18),
+                      borderColor: color.withValues(alpha: 0.75),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: stackLeft,
+                  top: stackTop,
+                  child: _DemoCard(
+                    key: const ValueKey('custom-stack-demo-target-card'),
+                    color: color.withValues(alpha: 0.3),
+                    borderColor: color.withValues(alpha: 0.58),
+                  ),
+                ),
+                Positioned(
+                  left: topLeft,
+                  top: topTop,
+                  child: _DemoCard(
+                    key: const ValueKey('custom-stack-demo-top-card'),
+                    color: color.withValues(alpha: 0.12),
+                    borderColor: color,
+                  ),
+                ),
+                Positioned(
+                  key: const ValueKey('custom-stack-demo-hand'),
+                  left: handLeft,
+                  top: handTop,
+                  child: Opacity(
+                    opacity: handVisible ? 1 : 0,
+                    child: Icon(
+                      Icons.pan_tool_alt_rounded,
+                      size: 14,
+                      color: color,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _DemoCard extends StatelessWidget {
+  final Color color;
+  final Color borderColor;
+
+  const _DemoCard({super.key, required this.color, required this.borderColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 25,
+      height: 16,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: borderColor, width: 1.2),
+      ),
+    );
+  }
 }
 
 class _SavedCardsScreenState extends State<SavedCardsScreen>
@@ -90,6 +314,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
   @override
   void initState() {
     super.initState();
+    AppLogService.instance.action('Navigation', 'Opened wallet');
     _loadCards();
 
     _blurController = AnimationController(
@@ -196,13 +421,29 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
       setState(() {
         _cards = cards;
         _groups = groups;
-        _allCardholderNames = names.whereType<String>().toSet();
+        final namesByKey = <String, String>{};
+        for (final name in names.whereType<String>()) {
+          final label = _cardholderLabel(name);
+          if (label.isNotEmpty) {
+            namesByKey.putIfAbsent(_cardholderKey(label), () => label);
+          }
+        }
+        _allCardholderNames = namesByKey.values.toSet();
         _cardIdToCardholderName = cardIdToName;
         _selectedCardIds.removeWhere(
           (id) => !cards.any((card) => card.id == id),
         );
         _isLoading = false;
       });
+      AppLogService.instance.action(
+        'Cards',
+        'Wallet loaded',
+        details: {
+          'cardCount': cards.length,
+          'groupCount': groups.length,
+          'unreadableCount': unreadableNameCount,
+        },
+      );
       if (unreadableNameCount > 0 && !_hasShownUnreadableDetailsWarning) {
         _hasShownUnreadableDetailsWarning = true;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -221,6 +462,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
         );
       }
     } catch (e) {
+      AppLogService.instance.record('Cards', 'Wallet load failed: $e');
       if (!mounted || generation != _loadGeneration) return;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -267,7 +509,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
         if (card.id == null) return false;
         final cardholderName = _cardIdToCardholderName[card.id];
         return cardholderName != null &&
-            _selectedCardholderNames!.contains(cardholderName);
+            _selectedCardholderNames!.contains(_cardholderKey(cardholderName));
       }).toList();
     }
 
@@ -310,6 +552,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
       _searchQuery = '';
       _searchController.clear();
     });
+    AppLogService.instance.action('Cards', 'Cleared wallet filters');
   }
 
   bool get _hasActiveFilters =>
@@ -384,7 +627,13 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
             ? 'Card Information'
             : '${cards.length} Card Details',
       );
+      AppLogService.instance.action(
+        'Card sharing',
+        'Masked-card share sheet opened',
+        details: {'cardCount': cards.length},
+      );
     } catch (e) {
+      AppLogService.instance.record('Card sharing', 'Card sharing failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -493,6 +742,11 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
       for (final card in cards) {
         if (card.id != null) await _cardStorage.deleteCard(card.id!);
       }
+      AppLogService.instance.action(
+        'Cards',
+        'Bulk card deletion completed',
+        details: {'count': count},
+      );
       _clearSelection();
       await _loadCards();
       if (!mounted) return;
@@ -503,6 +757,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
         ),
       );
     } catch (e) {
+      AppLogService.instance.record('Cards', 'Bulk card deletion failed: $e');
       await _loadCards();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -539,6 +794,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
     if (confirmed == true && card.id != null) {
       try {
         await _cardStorage.deleteCard(card.id!);
+        AppLogService.instance.action('Cards', 'Card deleted');
         await _loadCards();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -549,6 +805,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
           );
         }
       } catch (e) {
+        AppLogService.instance.record('Cards', 'Card deletion failed: $e');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -566,6 +823,8 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
       _toggleCardSelection(card);
       return;
     }
+
+    AppLogService.instance.action('Navigation', 'Opened card details');
 
     final result = await Navigator.push<bool>(
       context,
@@ -596,6 +855,11 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
         groupId: selection.group?.id,
         clearGroup: selection.group == null,
       ),
+    );
+    AppLogService.instance.action(
+      'Cards',
+      'Card group changed',
+      details: {'grouped': selection.group != null},
     );
     await _loadCards();
 
@@ -628,14 +892,19 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
     }
   }
 
-  void _handleAddOption(AddCardOption option) async {
+  void _handleAddOption(_AddCardOption option) async {
+    AppLogService.instance.action(
+      'Cards',
+      'Add-card method selected',
+      details: {'method': option.name},
+    );
     _toggleAddOptions();
 
     await Future.delayed(const Duration(milliseconds: 150));
     if (!mounted) return;
 
     switch (option) {
-      case AddCardOption.nfc:
+      case _AddCardOption.nfc:
         final nfcReady = await ensureNfcReady(context);
         if (!mounted || !nfcReady) break;
         final result = await Navigator.push<bool>(
@@ -644,10 +913,10 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
         );
         if (result == true && mounted) _loadCards();
         break;
-      case AddCardOption.scan:
+      case _AddCardOption.scan:
         await _handleCameraScan();
         break;
-      case AddCardOption.manual:
+      case _AddCardOption.manual:
         await Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => const ManualAddCardScreen()),
@@ -674,6 +943,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
 
     if (cardData != null && mounted) {
       await _cardStorage.saveCard(cardData);
+      AppLogService.instance.action('Cards', 'Scanned card saved');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -700,16 +970,17 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
           selectedCardIds: _selectedCardIds,
           selectionMode: _isSelectionMode,
         );
-      case CardViewMode.grid:
-        return CardTilesGrid(
-          cards: cards,
-          onCardTap: _onCardTap,
-          onCardLongPress: _startSelection,
-          selectedCardIds: _selectedCardIds,
-          selectionMode: _isSelectionMode,
-        );
       case CardViewMode.stackedGrid:
         final stackBy = viewProvider.stackBy;
+        if (stackBy == CardStackBy.none) {
+          return CardTilesGrid(
+            cards: cards,
+            onCardTap: _onCardTap,
+            onCardLongPress: _startSelection,
+            selectedCardIds: _selectedCardIds,
+            selectionMode: _isSelectionMode,
+          );
+        }
         final isCustom = stackBy == CardStackBy.custom;
         return StackedCardGrid(
           stacks: _buildStacks(cards, stackBy),
@@ -740,7 +1011,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
     if (!target.isLooseCard) return;
 
     final partner = target.cards.first;
-    final name = await showGroupNameDialog(
+    final name = await showGroupNameSheet(
       context,
       title: 'New Group',
       initialValue: _suggestedGroupName(card, partner),
@@ -784,6 +1055,12 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
 
     for (final card in cards) {
       final ({String key, String title}) bucket = switch (axis) {
+        CardStackBy.none => (
+          key: card.id ?? 'card-${card.lastFourDigits}',
+          title: card.cardNickname?.isNotEmpty == true
+              ? card.cardNickname!
+              : card.categoryName,
+        ),
         CardStackBy.bank => (
           key: card.bankId ?? unassignedKey,
           title: card.bankId != null
@@ -877,7 +1154,8 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
     if (name == null || name.isEmpty) {
       return (key: unassignedKey, title: 'No cardholder');
     }
-    return (key: name, title: name);
+    final label = _cardholderLabel(name);
+    return (key: _cardholderKey(name), title: label);
   }
 
   ({String key, String title}) _customGroupBucket(
@@ -922,7 +1200,14 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
                     !_isSelectionMode &&
                     _cards.isNotEmpty)
                   _buildStackByPills(),
+                if (viewMode == CardViewMode.stackedGrid &&
+                    context.watch<CardViewProvider>().stackBy ==
+                        CardStackBy.custom &&
+                    !_isSelectionMode &&
+                    _cards.isNotEmpty)
+                  _buildCustomStackGuidance(),
                 Expanded(
+                  key: const ValueKey('wallet-cards-view'),
                   child: _isLoading
                       ? const Center(child: CircularProgressIndicator())
                       : _cards.isEmpty
@@ -1064,19 +1349,19 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
         icon: Icons.edit_outlined,
         label: 'Add Manually',
         color: themeProvider.getPrimaryColor(),
-        option: AddCardOption.manual,
+        option: _AddCardOption.manual,
       ),
       _OptionData(
         icon: Icons.camera_alt_outlined,
         label: 'Scan Card',
         color: AppSemanticColors.of(context).success,
-        option: AddCardOption.scan,
+        option: _AddCardOption.scan,
       ),
       _OptionData(
         icon: Icons.contactless_outlined,
         label: 'Add via NFC',
         color: AppSemanticColors.of(context).info,
-        option: AddCardOption.nfc,
+        option: _AddCardOption.nfc,
       ),
     ];
 
@@ -1159,9 +1444,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
                   ButtonSegment(
                     value: mode,
                     icon: Icon(mode.icon, size: 18),
-                    label: Text(
-                      mode == CardViewMode.stackedGrid ? 'Stacks' : mode.label,
-                    ),
+                    label: Text(mode.label),
                   ),
               ],
               selected: {viewProvider.viewMode},
@@ -1231,6 +1514,10 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
         ],
       ),
     );
+  }
+
+  Widget _buildCustomStackGuidance() {
+    return const _CustomStackGuidance();
   }
 
   Widget _buildStackByPill({
@@ -1343,6 +1630,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
               size: 28,
             ),
             onPressed: () async {
+              AppLogService.instance.action('Navigation', 'Opened Settings');
               // Only import/delete operations call back into the wallet. Smart
               // Scan, appearance, and security settings therefore cannot
               // replace the full in-memory list with a transient partial read
@@ -1980,7 +2268,8 @@ class _FilterModalState extends State<_FilterModal> {
   Widget _buildCardholdersSection() {
     if (widget.allCardholderNames.isEmpty) return const SizedBox.shrink();
 
-    final cardholders = widget.allCardholderNames.toList()..sort();
+    final cardholders = widget.allCardholderNames.toList()
+      ..sort((a, b) => _cardholderKey(a).compareTo(_cardholderKey(b)));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2004,21 +2293,47 @@ class _FilterModalState extends State<_FilterModal> {
   }
 
   Widget _buildCardholderChip(String name) {
-    final isSelected = _tempCardholders.contains(name);
+    final key = _cardholderKey(name);
+    final isSelected = _tempCardholders.contains(key);
     final initials = _getInitials(name);
+    final scheme = Theme.of(context).colorScheme;
 
     return FilterChip(
       selected: isSelected,
-      avatar: CircleAvatar(
-        child: Text(initials, style: Theme.of(context).textTheme.labelSmall),
+      avatar: SizedBox.square(
+        key: ValueKey('cardholder-avatar-$key'),
+        dimension: 20,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isSelected
+                ? scheme.onSecondaryContainer.withValues(alpha: 0.12)
+                : scheme.secondaryContainer,
+          ),
+          child: Padding(
+            key: ValueKey('cardholder-avatar-padding-$key'),
+            padding: const EdgeInsets.all(3),
+            child: Center(
+              child: Text(
+                initials,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  height: 1,
+                  fontSize: 10,
+                  color: scheme.onSecondaryContainer,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
       label: Text(name),
       onSelected: (_) {
         setState(() {
           if (isSelected) {
-            _tempCardholders.remove(name);
+            _tempCardholders.remove(key);
           } else {
-            _tempCardholders.add(name);
+            _tempCardholders.add(key);
           }
         });
       },
@@ -2112,7 +2427,7 @@ class _FilterModalState extends State<_FilterModal> {
   }
 
   String _getInitials(String name) {
-    final words = name.trim().split(' ');
+    final words = name.trim().split(RegExp(r'\s+'));
     if (words.isEmpty) return '';
     if (words.length == 1) {
       return words[0].substring(0, words[0].length >= 2 ? 2 : 1).toUpperCase();
@@ -2121,11 +2436,13 @@ class _FilterModalState extends State<_FilterModal> {
   }
 }
 
+enum _AddCardOption { nfc, scan, manual }
+
 class _OptionData {
   final IconData icon;
   final String label;
   final Color color;
-  final AddCardOption option;
+  final _AddCardOption option;
 
   _OptionData({
     required this.icon,

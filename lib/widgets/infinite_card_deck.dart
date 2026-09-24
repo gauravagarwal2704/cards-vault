@@ -485,7 +485,13 @@ class _InfiniteCardDeckState extends State<InfiniteCardDeck>
   }
 
   Widget _buildCard(CardData card, bool isFocused) {
-    final bank = card.bankId != null ? Banks.getById(card.bankId!) : null;
+    final configuredBank = card.bankId != null
+        ? Banks.getById(card.bankId!)
+        : null;
+    final network = _detectNetwork(card.cardType);
+    final bank =
+        configuredBank ??
+        (network == CardNetwork.amex ? Banks.getById('amex') : null);
     final design = card.designId != null
         ? CardDesigns.getById(card.designId!)
         : null;
@@ -504,8 +510,6 @@ class _InfiniteCardDeckState extends State<InfiniteCardDeck>
         (card.customBackgroundImagePath?.isNotEmpty == true
             ? CardContrast.ivory
             : CardContrast.bestForeground([primaryColor, secondaryColor]));
-
-    final network = _detectNetwork(card.cardType);
 
     String bankName = bank?.name ?? '';
     String cardName = card.cardNickname ?? card.categoryName;
@@ -862,7 +866,6 @@ class _WalletCardCompact extends StatelessWidget {
         cardNumber: '',
         forceNetwork: network,
         height: 28,
-        isInputField: false,
         backgroundColor: primaryColor,
       ),
     );

@@ -20,6 +20,7 @@ class CardDesign {
   final String name;
   final CardDesignStyle style;
   final String assetPath;
+  final String? sourceSvgOverride;
 
   /// Fallback colors are also used for shadows and bank-logo contrast while
   /// the SVG is decoding.
@@ -33,15 +34,18 @@ class CardDesign {
 
   /// Exact extracted SVG retained as a design source. The app uses [assetPath]
   /// because Flutter intentionally ignores several of Figma's SVG filters.
-  String get sourceSvgPath => assetPath
-      .replaceFirst('assets/', 'design_sources/')
-      .replaceFirst('.webp', '.svg');
+  String get sourceSvgPath =>
+      sourceSvgOverride ??
+      assetPath
+          .replaceFirst('assets/', 'design_sources/')
+          .replaceFirst('.webp', '.svg');
 
   const CardDesign({
     required this.id,
     required this.name,
     required this.style,
     required this.assetPath,
+    this.sourceSvgOverride,
     required this.primaryColor,
     required this.secondaryColor,
     this.accentColor,
@@ -173,7 +177,10 @@ class CardDesigns {
       id: 'monochrome_01',
       name: 'Monochrome/01',
       style: CardDesignStyle.monochrome,
-      assetPath: 'assets/card_backgrounds/monochrome/01.webp',
+      // This frame is byte-identical to Abstract/08. Share the runtime raster
+      // while retaining the original source path and stable saved-card ID.
+      assetPath: 'assets/card_backgrounds/abstract/08.webp',
+      sourceSvgOverride: 'design_sources/card_backgrounds/monochrome/01.svg',
       primaryColor: Colors.white,
       secondaryColor: Color(0xFFF2F2F2),
       foregroundColor: CardContrast.charcoal,

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/card_data.dart';
 import '../providers/nfc_provider.dart';
 import '../services/secure_card_storage.dart';
+import '../services/app_log_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
 import '../theme/app_shapes.dart';
@@ -30,6 +31,7 @@ class _NfcScanScreenState extends State<NfcScanScreen>
   @override
   void initState() {
     super.initState();
+    AppLogService.instance.action('Navigation', 'Opened NFC card scan');
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
@@ -60,15 +62,18 @@ class _NfcScanScreenState extends State<NfcScanScreen>
   Future<void> _startScan() async {
     if (_hasStartedScan) return;
     _hasStartedScan = true;
+    AppLogService.instance.action('Scanning', 'NFC scan started');
     final provider = context.read<NfcProvider>();
     provider.clearError();
     await provider.readCard();
     if (!mounted) return;
 
     if (provider.state == NfcState.success && provider.cardData != null) {
+      AppLogService.instance.action('Scanning', 'NFC scan succeeded');
       HapticFeedback.mediumImpact();
       await _reviewCard(provider.cardData!);
     } else if (provider.state == NfcState.error) {
+      AppLogService.instance.action('Scanning', 'NFC scan failed');
       HapticFeedback.heavyImpact();
     }
   }
@@ -90,10 +95,12 @@ class _NfcScanScreenState extends State<NfcScanScreen>
 
     try {
       await _cardStorage.saveCard(result);
+      AppLogService.instance.action('Cards', 'NFC card saved');
       if (!mounted) return;
       HapticFeedback.mediumImpact();
       Navigator.pop(context, true);
     } catch (error) {
+      AppLogService.instance.record('Cards', 'NFC card save failed: $error');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

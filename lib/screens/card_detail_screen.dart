@@ -10,6 +10,7 @@ import '../models/card_data.dart';
 import '../data/banks.dart';
 import '../data/card_designs.dart';
 import '../services/auth_service.dart';
+import '../services/app_log_service.dart';
 import '../services/secure_card_storage.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/backup_password_dialog.dart';
@@ -41,7 +42,6 @@ class CardDetailScreen extends StatefulWidget {
 }
 
 class _CardDetailScreenState extends State<CardDetailScreen> {
-  final AuthService _authService = AuthService();
   final SecureCardStorage _cardStorage = SecureCardStorage();
   bool _isCardNumberVisible = false;
   bool _isExpiryVisible = false;
@@ -68,6 +68,7 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
   @override
   void initState() {
     super.initState();
+    AppLogService.instance.action('Navigation', 'Opened card details');
     _card = widget.card;
     _loadCardFaceDetails();
   }
@@ -124,22 +125,29 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
           ),
         );
         if (repaired != null) _card = repaired;
-      } catch (e) {
-        debugPrint('Could not persist repaired card type: $e');
+      } catch (_) {
+        // A failed metadata repair must not expose storage paths or card data.
       }
     }
     return fromNumber;
   }
 
-  Future<bool> _ensureAuthenticated({required String reason}) async {
-    final authenticated = await _authService.authenticateForCardDetails(
+  Future<bool> _ensureAuthenticated({
+    required ProtectedAction action,
+    required String reason,
+  }) async {
+    final authentication =
+        context.read<AuthenticationCoordinator?>() ??
+        AuthenticationCoordinator();
+    final authenticated = await authentication.authorize(
+      action,
       reason: reason,
     );
     if (!authenticated && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _authService.lastErrorMessage ?? 'Authentication required',
+            authentication.lastErrorMessage ?? 'Authentication required',
           ),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
@@ -151,14 +159,17 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
   Future<void> _toggleCardNumberVisibility() async {
     if (_isCardNumberVisible) {
       setState(() => _isCardNumberVisible = false);
+      AppLogService.instance.action('Card details', 'Hid card number');
       return;
     }
     if (await _ensureAuthenticated(
+          action: ProtectedAction.revealCardDetails,
           reason: 'Authenticate to view card number',
         ) &&
         mounted) {
       HapticFeedback.selectionClick();
       setState(() => _isCardNumberVisible = true);
+      AppLogService.instance.action('Card details', 'Revealed card number');
       _scheduleSensitiveHide();
     }
   }
@@ -166,14 +177,17 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
   Future<void> _toggleExpiryVisibility() async {
     if (_isExpiryVisible) {
       setState(() => _isExpiryVisible = false);
+      AppLogService.instance.action('Card details', 'Hid expiry date');
       return;
     }
     if (await _ensureAuthenticated(
+          action: ProtectedAction.revealCardDetails,
           reason: 'Authenticate to view expiry date',
         ) &&
         mounted) {
       HapticFeedback.selectionClick();
       setState(() => _isExpiryVisible = true);
+      AppLogService.instance.action('Card details', 'Revealed expiry date');
       _scheduleSensitiveHide();
     }
   }
@@ -181,18 +195,28 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
   Future<void> _toggleCvvVisibility() async {
     if (_isCvvVisible) {
       setState(() => _isCvvVisible = false);
+      AppLogService.instance.action('Card details', 'Hid CVV');
       return;
     }
-    if (await _ensureAuthenticated(reason: 'Authenticate to view CVV') &&
+    if (await _ensureAuthenticated(
+          action: ProtectedAction.revealCardDetails,
+          reason: 'Authenticate to view CVV',
+        ) &&
         mounted) {
       HapticFeedback.selectionClick();
       setState(() => _isCvvVisible = true);
+      AppLogService.instance.action('Card details', 'Revealed CVV');
       _scheduleSensitiveHide();
     }
   }
 
   Future<void> _copyToClipboard(String text, String label) async {
     await Clipboard.setData(ClipboardData(text: text));
+    AppLogService.instance.action(
+      'Card details',
+      'Copied protected field',
+      details: {'field': label},
+    );
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -205,31 +229,32 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
   }
 
   Future<void> _copyCardNumber() async {
-    if (!_isCardNumberVisible) {
-      final ok = await _ensureAuthenticated(
-        reason: 'Authenticate to copy card number',
-      );
-      if (!ok) return;
-    }
+    final ok = await _ensureAuthenticated(
+      action: ProtectedAction.copyCardDetails,
+      reason: 'Authenticate to copy card number',
+    );
+    if (!ok) return;
     final number = await _card.getDecryptedCardNumber();
     if (!mounted) return;
     await _copyToClipboard(number, 'Card number');
   }
 
   Future<void> _copyExpiry() async {
-    if (!_isExpiryVisible) {
-      final ok = await _ensureAuthenticated(
-        reason: 'Authenticate to copy expiry date',
-      );
-      if (!ok) return;
-    }
+    final ok = await _ensureAuthenticated(
+      action: ProtectedAction.copyCardDetails,
+      reason: 'Authenticate to copy expiry date',
+    );
+    if (!ok) return;
     final expiry = await _card.getDecryptedExpiryDate();
     if (!mounted) return;
     await _copyToClipboard(expiry, 'Expiry date');
   }
 
   Future<void> _copyCvv() async {
-    final ok = await _ensureAuthenticated(reason: 'Authenticate to copy CVV');
+    final ok = await _ensureAuthenticated(
+      action: ProtectedAction.copyCardDetails,
+      reason: 'Authenticate to copy CVV',
+    );
     if (!ok) return;
     final cvv = await _card.getDecryptedCvv();
     if (!mounted) return;
@@ -273,14 +298,16 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
     if (confirmed == true && _card.id != null) {
       try {
         await _cardStorage.deleteCard(_card.id!);
+        AppLogService.instance.action('Cards', 'Deleted card');
         if (mounted) {
           Navigator.pop(context, true);
         }
-      } catch (e) {
+      } catch (_) {
+        AppLogService.instance.record('Cards', 'Card deletion failed');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Failed to delete: $e'),
+              content: const Text('The card could not be deleted.'),
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
           );
@@ -292,6 +319,18 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
   Future<void> _editCard({
     CardEditInitialSection initialSection = CardEditInitialSection.cardDetails,
   }) async {
+    final authenticated = await _ensureAuthenticated(
+      action: ProtectedAction.editCardDetails,
+      reason: 'Authenticate to edit protected card details',
+    );
+    if (!authenticated || !mounted) return;
+
+    AppLogService.instance.action(
+      'Card details',
+      'Opened card editor',
+      details: {'section': initialSection.name},
+    );
+
     final result = await Navigator.push<CardData>(
       context,
       MaterialPageRoute(
@@ -300,6 +339,7 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
       ),
     );
     if (result != null && mounted) {
+      AppLogService.instance.action('Card details', 'Card edit completed');
       setState(() => _card = result);
       Navigator.pop(context, true);
     }
@@ -389,8 +429,14 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
     }
   }
 
-  void _showShareBottomSheet() {
-    showModalBottomSheet(
+  Future<void> _showShareBottomSheet() async {
+    final authenticated = await _ensureAuthenticated(
+      action: ProtectedAction.shareCardDetails,
+      reason: 'Authenticate to choose protected card details to share',
+    );
+    if (!authenticated || !mounted) return;
+    AppLogService.instance.action('Card sharing', 'Opened share options');
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -964,9 +1010,36 @@ class _ShareBottomSheetState extends State<_ShareBottomSheet> {
   bool _isLoading = false;
   bool _isExportingFile = false;
 
+  Future<bool> _authorize(ProtectedAction action, String reason) async {
+    final authentication =
+        context.read<AuthenticationCoordinator?>() ??
+        AuthenticationCoordinator();
+    final authenticated = await authentication.authorize(
+      action,
+      reason: reason,
+    );
+    if (!authenticated && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            authentication.lastErrorMessage ?? 'Authentication required',
+          ),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+    return authenticated;
+  }
+
   /// Shares the whole card as an encrypted `.cwbak` file: every field, the
   /// notes and the photos, so the recipient can import it as a real card.
   Future<void> _shareCardFile() async {
+    final authenticated = await _authorize(
+      ProtectedAction.exportCard,
+      'Authenticate to export this card as an encrypted file',
+    );
+    if (!authenticated || !mounted) return;
+
     final password = await promptBackupPassword(
       context,
       title: 'Share Card File',
@@ -993,12 +1066,20 @@ class _ShareBottomSheetState extends State<_ShareBottomSheet> {
           subject: 'Card from CardVault',
           text: 'Import this file in CardVault under Settings > Import Backup.',
         );
+        AppLogService.instance.action(
+          'Card sharing',
+          'Encrypted card share sheet opened',
+        );
       }
-    } catch (e) {
+    } catch (error) {
+      AppLogService.instance.record(
+        'Card sharing',
+        'Encrypted card export failed: $error',
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to share: $e'),
+            content: const Text('The encrypted card file could not be shared.'),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
@@ -1023,6 +1104,12 @@ class _ShareBottomSheetState extends State<_ShareBottomSheet> {
       );
       return;
     }
+
+    final authenticated = await _authorize(
+      ProtectedAction.shareCardDetails,
+      'Authenticate to share the selected protected card details',
+    );
+    if (!authenticated || !mounted) return;
 
     setState(() => _isLoading = true);
 
@@ -1077,12 +1164,23 @@ class _ShareBottomSheetState extends State<_ShareBottomSheet> {
       if (mounted) {
         Navigator.pop(context);
         await Share.share(shareText, subject: 'Card Details');
+        AppLogService.instance.action(
+          'Card sharing',
+          'Protected-details share sheet opened',
+          details: {'fieldCount': details.length},
+        );
       }
-    } catch (e) {
+    } catch (error) {
+      AppLogService.instance.record(
+        'Card sharing',
+        'Protected-details sharing failed: $error',
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to share: $e'),
+            content: const Text(
+              'The selected card details could not be shared.',
+            ),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );

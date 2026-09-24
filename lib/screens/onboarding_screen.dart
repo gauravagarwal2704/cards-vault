@@ -9,6 +9,7 @@ import '../providers/app_icon_provider.dart';
 import '../theme/app_motion.dart';
 import '../theme/app_typography.dart';
 import '../widgets/app_icon_artwork.dart';
+import '../services/app_log_service.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -29,6 +30,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   @override
   void initState() {
     super.initState();
+    AppLogService.instance.action('Navigation', 'Opened onboarding');
     _controller = AnimationController(
       vsync: this,
       duration: AppMotion.emphasized,
@@ -67,7 +69,17 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
     setState(() => _isSaving = true);
     HapticFeedback.lightImpact();
-    await context.read<ProfileProvider>().setDisplayName(name);
+    final span = AppLogService.instance.startSpan(
+      'Onboarding',
+      'Complete onboarding',
+    );
+    try {
+      await context.read<ProfileProvider>().setDisplayName(name);
+      span.complete();
+    } catch (error, stackTrace) {
+      span.fail(error, stackTrace);
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   @override

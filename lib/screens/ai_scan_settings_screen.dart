@@ -21,18 +21,38 @@ class _AiScanSettingsScreenState extends State<AiScanSettingsScreen> {
   final _settingsService = AiScanSettingsService();
   final _scanService = AiCardScanService();
   final _logService = AiScanLogService();
-  final _authService = AuthService();
 
   AiScanProvider _provider = AiScanProvider.gemini;
   AiScanProvider? _testingProvider;
   bool _enabled = false;
   bool _loading = true;
   bool _saving = false;
-  bool _loggingEnabled = true;
+  bool _loggingEnabled = false;
   int _logCount = 0;
   Map<AiScanProvider, bool> _savedKeyByProvider = {
     for (final provider in AiScanProvider.values) provider: false,
   };
+
+  Future<bool> _authorize(ProtectedAction action, {String? reason}) async {
+    final authentication =
+        context.read<AuthenticationCoordinator?>() ??
+        AuthenticationCoordinator();
+    final authenticated = await authentication.authorize(
+      action,
+      reason: reason,
+    );
+    if (!authenticated && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            authentication.lastErrorMessage ?? 'Authentication required',
+          ),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+    return authenticated;
+  }
 
   @override
   void initState() {
@@ -54,7 +74,10 @@ class _AiScanSettingsScreenState extends State<AiScanSettingsScreen> {
     if (!mounted) return;
     setState(() {
       _provider = settings.provider;
-      _enabled = settings.enabled && (savedKeys[settings.provider] ?? false);
+      _enabled =
+          settings.enabled &&
+          settings.hasProcessingConsent &&
+          (savedKeys[settings.provider] ?? false);
       _savedKeyByProvider = savedKeys;
       _loggingEnabled = loggingEnabled;
       _logCount = logs.length;
@@ -71,16 +94,44 @@ class _AiScanSettingsScreenState extends State<AiScanSettingsScreen> {
       );
       return;
     }
-    if (value && !await _settingsService.hasAcceptedByokRisk()) {
+    final authenticated = await _authorize(
+      ProtectedAction.changeSecuritySettings,
+      reason: value
+          ? 'Authenticate to enable SmartAI scanning'
+          : 'Authenticate to disable SmartAI scanning',
+    );
+    if (!authenticated || !mounted) return;
+
+    if (value && !await _settingsService.hasProcessingConsent(_provider)) {
       if (!mounted) return;
       final accepted = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
         builder: (dialogContext) => AlertDialog(
           icon: const Icon(Icons.warning_amber_rounded),
-          title: const Text('Enable advanced BYOK mode?'),
-          content: Text(
-            'Your card image will be sent directly to ${_provider.label} using your key. The provider may process sensitive card data and charge your account. Secure storage reduces risk, but no mobile app can make a long-lived API key impossible to extract from a compromised device.',
+          title: Text('Consent to ${_provider.label} processing?'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_provider.processingDisclosure),
+                const SizedBox(height: 12),
+                Text(_provider.retentionDisclosure),
+                const SizedBox(height: 12),
+                const Text(
+                  'Provider charges may apply. Your API key is kept in device '
+                  'secure storage, but a compromised device can still expose '
+                  'it.',
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'You can leave SmartAI off and continue scanning entirely '
+                  'offline.',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -89,24 +140,26 @@ class _AiScanSettingsScreenState extends State<AiScanSettingsScreen> {
             ),
             FilledButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('I understand'),
+              child: const Text('Consent and enable'),
             ),
           ],
         ),
       );
       if (accepted != true) return;
-      await _settingsService.acceptByokRisk();
+      await _settingsService.acceptProcessingConsent(_provider);
       if (!mounted) return;
     }
     setState(() => _enabled = value);
   }
 
-  void _selectProvider(AiScanProvider provider) {
+  Future<void> _selectProvider(AiScanProvider provider) async {
     if (_testingProvider != null || provider == _provider) return;
     final hasKey = _savedKeyByProvider[provider] ?? false;
+    final hasConsent = await _settingsService.hasProcessingConsent(provider);
+    if (!mounted) return;
     setState(() {
       _provider = provider;
-      if (!hasKey) _enabled = false;
+      if (!hasKey || !hasConsent) _enabled = false;
     });
     if (!hasKey) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -187,15 +240,16 @@ class _AiScanSettingsScreenState extends State<AiScanSettingsScreen> {
 
   Future<void> _addOrUpdateKey(AiScanProvider provider) async {
     final replacing = _savedKeyByProvider[provider] ?? false;
+    final authenticated = await _authorize(
+      ProtectedAction.manageProviderCredentials,
+      reason: replacing
+          ? 'Authenticate to replace the saved ${provider.label} key'
+          : 'Authenticate to add a ${provider.label} key',
+    );
+    if (!authenticated || !mounted) return;
+
     final apiKey = await _promptForKey(provider, replacing);
     if (apiKey == null || !mounted) return;
-
-    if (replacing) {
-      final authenticated = await _authService.authenticateForCardDetails(
-        reason: 'Authenticate to replace the saved ${provider.label} key',
-      );
-      if (!authenticated || !mounted) return;
-    }
 
     setState(() => _testingProvider = provider);
     final result = await _scanService.validateApiKey(
@@ -240,7 +294,8 @@ class _AiScanSettingsScreenState extends State<AiScanSettingsScreen> {
   }
 
   Future<void> _deleteSavedKey(AiScanProvider provider) async {
-    final authenticated = await _authService.authenticateForCardDetails(
+    final authenticated = await _authorize(
+      ProtectedAction.manageProviderCredentials,
       reason: 'Authenticate to remove the saved ${provider.label} key',
     );
     if (!authenticated || !mounted) return;
@@ -291,6 +346,12 @@ class _AiScanSettingsScreenState extends State<AiScanSettingsScreen> {
       await _setEnabled(true);
       return;
     }
+    final authenticated = await _authorize(
+      ProtectedAction.changeSecuritySettings,
+      reason: 'Authenticate to save SmartAI security settings',
+    );
+    if (!authenticated || !mounted) return;
+
     setState(() => _saving = true);
     await _settingsService.savePreferences(
       enabled: _enabled,
@@ -310,13 +371,21 @@ class _AiScanSettingsScreenState extends State<AiScanSettingsScreen> {
   }
 
   Future<void> _setLoggingEnabled(bool value) async {
+    final authenticated = await _authorize(
+      ProtectedAction.changeSecuritySettings,
+      reason: value
+          ? 'Authenticate to enable sensitive scan diagnostics'
+          : 'Authenticate to disable sensitive scan diagnostics',
+    );
+    if (!authenticated || !mounted) return;
     await _logService.setLoggingEnabled(value);
     if (!mounted) return;
     setState(() => _loggingEnabled = value);
   }
 
   Future<void> _openLogs() async {
-    final authenticated = await _authService.authenticateForCardDetails(
+    final authenticated = await _authorize(
+      ProtectedAction.viewSensitiveDiagnostics,
       reason: 'Authenticate to view sensitive SmartAI scan logs',
     );
     if (!authenticated || !mounted) return;
@@ -550,7 +619,10 @@ class _AiScanSettingsScreenState extends State<AiScanSettingsScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Offline recognition runs first. If it is incomplete, CardVault asks before sending up to three metadata-free card frames to the selected provider.',
+                        'Offline recognition runs first. SmartAI requires '
+                        'provider-specific consent, then asks again before '
+                        'sending up to three metadata-free card frames. Leave '
+                        'it off to keep scanning entirely on device.',
                         style: AppTypography.body(color: secondary),
                       ),
                     ],

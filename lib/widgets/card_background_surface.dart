@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../data/card_designs.dart';
 import '../utils/card_contrast.dart';
+import '../utils/image_utils.dart';
 
 /// Shared renderer for built-in, custom-gradient, and image card backgrounds.
 /// Using one surface keeps the add/edit previews and saved wallet cards in sync.
@@ -92,57 +93,67 @@ class CardBackgroundSurface extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: borderRadius,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: colors,
-                  transform: GradientRotation(
-                    customGradientAngle * math.pi / 180,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final cacheWidth = ImageUtils.cardDisplayCacheWidth(
+              constraints.maxWidth,
+              MediaQuery.devicePixelRatioOf(context),
+            );
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: colors,
+                      transform: GradientRotation(
+                        customGradientAngle * math.pi / 180,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-            if (design != null)
-              _buildImageLayer(
-                Image.asset(
-                  design!.assetPath,
-                  fit: BoxFit.cover,
-                  alignment: Alignment.center,
-                  filterQuality: FilterQuality.high,
-                ),
-                blur: design!.style == CardDesignStyle.image,
-              ),
-            if (hasImage)
-              _buildImageLayer(
-                Image.file(
-                  File(imagePath),
-                  fit: BoxFit.cover,
-                  gaplessPlayback: true,
-                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                ),
-                blur: true,
-              ),
-            if (scrimOpacity > 0)
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      scrimColor.withValues(alpha: scrimOpacity * 0.82),
-                      scrimColor.withValues(alpha: scrimOpacity * 0.18),
-                      scrimColor.withValues(alpha: scrimOpacity),
-                    ],
+                if (design != null)
+                  _buildImageLayer(
+                    Image.asset(
+                      design!.assetPath,
+                      fit: BoxFit.cover,
+                      alignment: Alignment.center,
+                      filterQuality: FilterQuality.high,
+                      cacheWidth: cacheWidth,
+                    ),
+                    blur: design!.style == CardDesignStyle.image,
                   ),
-                ),
-              ),
-            child,
-          ],
+                if (hasImage)
+                  _buildImageLayer(
+                    Image.file(
+                      File(imagePath),
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      cacheWidth: cacheWidth,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    ),
+                    blur: true,
+                  ),
+                if (scrimOpacity > 0)
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          scrimColor.withValues(alpha: scrimOpacity * 0.82),
+                          scrimColor.withValues(alpha: scrimOpacity * 0.18),
+                          scrimColor.withValues(alpha: scrimOpacity),
+                        ],
+                      ),
+                    ),
+                  ),
+                child,
+              ],
+            );
+          },
         ),
       ),
     );

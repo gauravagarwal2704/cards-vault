@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_icon_option.dart';
+import '../services/app_log_service.dart';
 
 class AppIconProvider extends ChangeNotifier {
   AppIconProvider() {
@@ -28,7 +29,13 @@ class AppIconProvider extends ChangeNotifier {
       _selected = AppIconCatalog.findById(
         preferences.getString(_preferenceKey),
       );
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogService.instance.recordFailure(
+        'Load app icon preference',
+        error,
+        stackTrace,
+        category: 'Failure/Preferences',
+      );
       debugPrint('Error loading app icon selection: $error');
     } finally {
       _isInitialized = true;
@@ -44,7 +51,13 @@ class AppIconProvider extends ChangeNotifier {
       await _channel.invokeMethod<bool>('setAppIcon', {'iconId': _selected.id});
     } on MissingPluginException {
       // Native icon switching is not available in Flutter widget tests.
-    } on PlatformException catch (error) {
+    } on PlatformException catch (error, stackTrace) {
+      AppLogService.instance.recordFailure(
+        'Synchronize native app icon',
+        error,
+        stackTrace,
+        category: 'Failure/Android',
+      );
       debugPrint('Error synchronizing app icon: ${error.message}');
     }
   }
@@ -73,13 +86,31 @@ class AppIconProvider extends ChangeNotifier {
         }
       }
 
+      AppLogService.instance.action(
+        'Appearance',
+        'App icon changed',
+        details: {'icon': option.id},
+      );
+
       return null;
-    } on PlatformException catch (error) {
+    } on PlatformException catch (error, stackTrace) {
+      AppLogService.instance.recordFailure(
+        'Change app icon',
+        error,
+        stackTrace,
+        category: 'Failure/Appearance',
+      );
       _selected = previous;
       final preferences = await SharedPreferences.getInstance();
       await preferences.setString(_preferenceKey, previous.id);
       return error.message ?? 'Could not change the app icon.';
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogService.instance.recordFailure(
+        'Change app icon',
+        error,
+        stackTrace,
+        category: 'Failure/Appearance',
+      );
       _selected = previous;
       return 'Could not change the app icon.';
     } finally {

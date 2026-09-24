@@ -2,10 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import 'encryption_service.dart';
+import 'storage_path_guard.dart';
+import 'app_log_service.dart';
 
 class CardAttachmentStorage {
   static final CardAttachmentStorage _instance =
@@ -17,12 +18,11 @@ class CardAttachmentStorage {
   final _uuid = const Uuid();
 
   Future<Directory> _cardDir(String cardId) async {
-    final root = await getApplicationDocumentsDirectory();
-    final dir = Directory('${root.path}/card_attachments/$cardId');
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
-    }
-    return dir;
+    return containedCardStorageDirectory(
+      'card_attachments',
+      cardId,
+      create: true,
+    );
   }
 
   Future<String> saveAttachment(String cardId, File source) async {
@@ -30,11 +30,19 @@ class CardAttachmentStorage {
   }
 
   Future<String> saveAttachmentBytes(String cardId, Uint8List bytes) async {
-    final attachmentId = _uuid.v4();
-    final encrypted = await _encryption.encrypt(base64Encode(bytes));
-    final file = File('${(await _cardDir(cardId)).path}/$attachmentId.enc');
-    await file.writeAsString(encrypted);
-    return attachmentId;
+    return AppLogService.instance.trace(
+      'Storage',
+      'Save card attachment',
+      () async {
+        requireSafeStorageIdentifier(cardId, label: 'card ID');
+        final attachmentId = _uuid.v4();
+        final encrypted = await _encryption.encrypt(base64Encode(bytes));
+        final file = File('${(await _cardDir(cardId)).path}/$attachmentId.enc');
+        await file.writeAsString(encrypted);
+        return attachmentId;
+      },
+      details: {'byteCount': bytes.length},
+    );
   }
 
   Future<List<String>> saveAttachments(
@@ -50,36 +58,65 @@ class CardAttachmentStorage {
 
   Future<Uint8List?> loadBytes(String cardId, String attachmentId) async {
     try {
+      requireSafeStorageIdentifier(attachmentId, label: 'attachment ID');
       final file = File('${(await _cardDir(cardId)).path}/$attachmentId.enc');
       if (!await file.exists()) return null;
       return await _encryption.decryptBase64Bytes(await file.readAsString());
-    } catch (_) {
+    } catch (error, stackTrace) {
+      AppLogService.instance.recordFailure(
+        'Load card attachment',
+        error,
+        stackTrace,
+        category: 'Failure/Storage',
+      );
       return null;
     }
   }
 
   Future<void> deleteAttachment(String cardId, String attachmentId) async {
-    final file = File('${(await _cardDir(cardId)).path}/$attachmentId.enc');
-    if (await file.exists()) {
-      await file.delete();
-    }
+    await AppLogService.instance.trace(
+      'Storage',
+      'Delete card attachment',
+      () async {
+        requireSafeStorageIdentifier(attachmentId, label: 'attachment ID');
+        final file = File('${(await _cardDir(cardId)).path}/$attachmentId.enc');
+        if (await file.exists()) {
+          await file.delete();
+        }
+      },
+    );
   }
 
   Future<void> deleteAttachments(
     String cardId,
     Iterable<String> attachmentIds,
   ) async {
-    for (final id in attachmentIds) {
-      await deleteAttachment(cardId, id);
-    }
+    final ids = attachmentIds.toList(growable: false);
+    await AppLogService.instance.trace(
+      'Storage',
+      'Delete card attachments',
+      () async {
+        for (final id in ids) {
+          await deleteAttachment(cardId, id);
+        }
+      },
+      details: {'count': ids.length},
+    );
   }
 
   Future<void> deleteAllForCard(String cardId) async {
-    final dir = Directory(
-      '${(await getApplicationDocumentsDirectory()).path}/card_attachments/$cardId',
+    await AppLogService.instance.trace(
+      'Storage',
+      'Delete all card attachments',
+      () async {
+        final dir = await containedCardStorageDirectory(
+          'card_attachments',
+          cardId,
+        );
+        if (await dir.exists()) {
+          await dir.delete(recursive: true);
+        }
+      },
     );
-    if (await dir.exists()) {
-      await dir.delete(recursive: true);
-    }
   }
 }

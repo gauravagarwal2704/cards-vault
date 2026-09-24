@@ -12,7 +12,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.cardswallet.cards_wallet"
+    namespace = "com.cardswallet.cards_vault"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -22,7 +22,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.cardswallet.cards_wallet"
+        applicationId = "com.cardswallet.cards_vault"
         minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -46,6 +46,11 @@ android {
             packaging {
                 jniLibs {
                     excludes += ['**/libVkLayer_khronos_validation.so']
+                    // CardScan uses the CPU Interpreter API only. LiteRT 2.x
+                    // also ships this optional GPU accelerator, which is not
+                    // loaded by our scanner and needlessly expands the APK and
+                    // native attack surface.
+                    excludes += ['**/libLiteRtClGlAccelerator.so']
                 }
             }
         }
@@ -57,7 +62,13 @@ android {
 
             packaging {
                 jniLibs {
+                    // Release APKs optimize for download size. The package
+                    // manager extracts the same 16-KiB-aligned libraries at
+                    // install time, so scanner behavior and ABI coverage stay
+                    // unchanged while LiteRT and OCR binaries are deflated.
+                    useLegacyPackaging = true
                     excludes += ['**/libVkLayer_khronos_validation.so']
+                    excludes += ['**/libLiteRtClGlAccelerator.so']
                 }
             }
         }

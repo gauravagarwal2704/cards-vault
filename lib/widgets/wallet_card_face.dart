@@ -38,6 +38,8 @@ class WalletCardFace extends StatelessWidget {
   Widget build(BuildContext context) {
     final secondaryForeground = CardContrast.secondary(foregroundColor);
     final tertiaryForeground = CardContrast.tertiary(foregroundColor);
+    final issuer =
+        bank ?? (network == CardNetwork.amex ? Banks.getById('amex') : null);
 
     return Stack(
       children: [
@@ -78,10 +80,10 @@ class WalletCardFace extends StatelessWidget {
                   Expanded(
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: bank == null
+                      child: issuer == null
                           ? const SizedBox.shrink()
                           : BankLogo(
-                              bank: bank,
+                              bank: issuer,
                               size: 30,
                               useSmall: false,
                               backgroundColor: backgroundColor,
@@ -184,7 +186,6 @@ class WalletCardFace extends StatelessWidget {
                           forceNetwork: network,
                           height: 64,
                           maxWidth: 100,
-                          isInputField: false,
                           backgroundColor: backgroundColor,
                         ),
                       ),

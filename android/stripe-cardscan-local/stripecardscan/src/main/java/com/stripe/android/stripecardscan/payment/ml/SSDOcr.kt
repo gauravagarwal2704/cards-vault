@@ -6,7 +6,6 @@ import android.graphics.Rect
 import android.util.Size
 import androidx.annotation.VisibleForTesting
 import com.stripe.android.camera.framework.image.cropCameraPreviewToViewFinder
-import com.stripe.android.camera.framework.image.hasOpenGl31
 import com.stripe.android.camera.framework.image.scale
 import com.stripe.android.mlcore.base.InterpreterOptionsWrapper
 import com.stripe.android.mlcore.base.InterpreterWrapper
@@ -101,7 +100,16 @@ internal class SSDOcr private constructor(interpreter: InterpreterWrapper) :
     data class Input(
         val ssdOcrImage: MLImage,
         val acceptedFrameCandidate: Bitmap,
-    )
+    ) : AutoCloseable {
+        internal fun releaseMlResources() {
+            ssdOcrImage.close()
+        }
+
+        override fun close() {
+            releaseMlResources()
+            if (!acceptedFrameCandidate.isRecycled) acceptedFrameCandidate.recycle()
+        }
+    }
 
     data class Prediction(val pan: String?) {
 
@@ -129,14 +137,7 @@ internal class SSDOcr private constructor(interpreter: InterpreterWrapper) :
                 previewBounds,
                 cardFinder,
             )
-            return Input(
-                ssdOcrImage = croppedCard
-                    .scale(Factory.TRAINED_IMAGE_SIZE)
-                    .toMLImage(mean = IMAGE_MEAN, std = IMAGE_STD),
-                // Keep only this in-flight preview crop. The aggregator
-                // recycles rejected frames and returns the accepted one.
-                acceptedFrameCandidate = croppedCard,
-            )
+            return createInput(croppedCard)
         }
 
         /**
@@ -166,12 +167,41 @@ internal class SSDOcr private constructor(interpreter: InterpreterWrapper) :
                     it
                 }
             }
-            return Input(
-                ssdOcrImage = cropped
-                    .scale(Factory.TRAINED_IMAGE_SIZE)
-                    .toMLImage(mean = IMAGE_MEAN, std = IMAGE_STD),
-                acceptedFrameCandidate = cropped,
-            )
+            return createInput(cropped)
+        }
+
+        private fun createInput(croppedCard: Bitmap): Input {
+            var scaledCard: Bitmap? = null
+            return try {
+                val scaled = croppedCard.scale(Factory.TRAINED_IMAGE_SIZE)
+                scaledCard = scaled
+                Input(
+                    ssdOcrImage = scaled.toMLImage(
+                        mean = IMAGE_MEAN,
+                        std = IMAGE_STD,
+                    ),
+                    // The aggregator owns this crop after successful analysis.
+                    acceptedFrameCandidate = croppedCard,
+                )
+            } catch (t: Throwable) {
+                if (!croppedCard.isRecycled) croppedCard.recycle()
+                throw t
+            } finally {
+                scaledCard?.let { scaled ->
+                    if (scaled !== croppedCard && !scaled.isRecycled) scaled.recycle()
+                }
+            }
+        }
+    }
+
+    override suspend fun analyze(data: Input, state: Any): Prediction {
+        var succeeded = false
+        return try {
+            super.analyze(data, state).also { succeeded = true }
+        } finally {
+            // The model no longer needs its direct input buffer after analyze.
+            // On failure, the aggregator never receives the bitmap either.
+            if (succeeded) data.releaseMlResources() else data.close()
         }
     }
 
@@ -249,14 +279,12 @@ internal class SSDOcr private constructor(interpreter: InterpreterWrapper) :
         threads: Int = DEFAULT_THREADS
     ) : TFLAnalyzerFactory<Input, Prediction, SSDOcr>(context, fetchedModel) {
         companion object {
-            private const val USE_GPU = false
             private const val DEFAULT_THREADS = 4
 
             val TRAINED_IMAGE_SIZE = Size(600, 375)
         }
 
         override val tfOptions = InterpreterOptionsWrapper.Builder()
-            .useNNAPI(USE_GPU && hasOpenGl31(context.applicationContext))
             .numThreads(threads)
             .build()
 

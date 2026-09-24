@@ -12,6 +12,7 @@ import '../services/ai_card_scan_service.dart';
 import '../services/ai_scan_settings_service.dart';
 import '../services/ocr_service.dart';
 import '../services/local_card_scan_service.dart';
+import '../services/app_log_service.dart';
 import '../utils/camera_preview_geometry.dart';
 import '../utils/card_network_utils.dart';
 import '../utils/image_utils.dart';
@@ -64,6 +65,11 @@ class _CardCameraScreenState extends State<CardCameraScreen>
   @override
   void initState() {
     super.initState();
+    AppLogService.instance.action(
+      'Navigation',
+      'Opened card scanner',
+      details: {'platformScanner': _usesNativeScannerOnly},
+    );
     WidgetsBinding.instance.addObserver(this);
     if (_usesNativeScannerOnly) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -329,7 +335,12 @@ class _CardCameraScreenState extends State<CardCameraScreen>
             (controller == null || !controller.value.isInitialized))) {
       return;
     }
+    final span = AppLogService.instance.startSpan(
+      'Scanning',
+      'Native local card scan',
+    );
     HapticFeedback.mediumImpact();
+    AppLogService.instance.action('Scanning', 'Local card scan started');
     setState(() {
       _isCapturing = true;
       _galleryStripeFallback = false;
@@ -354,6 +365,17 @@ class _CardCameraScreenState extends State<CardCameraScreen>
       if (!mounted || _isClosing) return;
 
       if (!scan.completed) {
+        span.complete(
+          details: {
+            'success': false,
+            'reason': scan.cancellationReason ?? 'cancelled',
+          },
+        );
+        AppLogService.instance.action(
+          'Scanning',
+          'Local card scan ended without a result',
+          details: {'reason': scan.cancellationReason ?? 'cancelled'},
+        );
         setState(() {
           _isCapturing = false;
           _liveQuality = _scanCanceledGuidance(scan.cancellationReason);
@@ -395,6 +417,11 @@ class _CardCameraScreenState extends State<CardCameraScreen>
           ? localText
           : _withVerifiedPan(localText, scan.pan!);
       if (result.cardNumber == null) {
+        span.complete(details: {'success': false, 'reason': 'noCardNumber'});
+        AppLogService.instance.action(
+          'Scanning',
+          'Local card scan could not identify a card',
+        );
         if (mounted && !_isClosing) {
           setState(() {
             _isCapturing = false;
@@ -414,9 +441,16 @@ class _CardCameraScreenState extends State<CardCameraScreen>
         );
       });
       HapticFeedback.lightImpact();
+      AppLogService.instance.action('Scanning', 'Local card scan succeeded');
+      span.complete(details: {'success': true});
       await Future<void>.delayed(const Duration(milliseconds: 220));
       if (mounted) await _popScanner(result);
-    } on PlatformException {
+    } on PlatformException catch (error, stackTrace) {
+      span.fail(error, stackTrace);
+      AppLogService.instance.record(
+        'Scanning',
+        'Local card scanner platform error: ${error.code}',
+      );
       if (mounted && !_isClosing) {
         setState(() {
           _isCapturing = false;
@@ -425,6 +459,9 @@ class _CardCameraScreenState extends State<CardCameraScreen>
         });
         if (!_usesNativeScannerOnly) await _initializeCamera();
       }
+    } catch (error, stackTrace) {
+      span.fail(error, stackTrace);
+      rethrow;
     } finally {
       if (acceptedImagePath != null) {
         await CardScanCapture(
@@ -489,6 +526,7 @@ class _CardCameraScreenState extends State<CardCameraScreen>
       _errorDetails = null;
       _isAiError = false;
     });
+    AppLogService.instance.action('Scanning', 'Gallery picker opened');
     try {
       final image = await ImagePicker().pickImage(
         source: ImageSource.gallery,
@@ -496,6 +534,7 @@ class _CardCameraScreenState extends State<CardCameraScreen>
       );
       if (!mounted) return;
       if (image == null) {
+        AppLogService.instance.action('Scanning', 'Gallery picker cancelled');
         setState(() => _isPickingGallery = false);
         final current = _controller;
         if (current == null || !current.value.isInitialized) {
@@ -508,6 +547,10 @@ class _CardCameraScreenState extends State<CardCameraScreen>
         fromGallery: true,
       );
     } catch (error) {
+      AppLogService.instance.record(
+        'Scanning',
+        'Gallery image selection failed: $error',
+      );
       if (mounted) {
         setState(() {
           _isPickingGallery = false;
@@ -523,6 +566,14 @@ class _CardCameraScreenState extends State<CardCameraScreen>
     required bool fromGallery,
   }) async {
     if (!mounted) return;
+    final span = AppLogService.instance.startSpan(
+      'Scanning',
+      'Process captured card image',
+      details: {
+        'source': fromGallery ? 'gallery' : 'camera',
+        'frameCount': capture.imagePaths.length,
+      },
+    );
     setState(() {
       _isCapturing = false;
       _isPickingGallery = fromGallery;
@@ -607,6 +658,18 @@ class _CardCameraScreenState extends State<CardCameraScreen>
 
       if (!mounted) return;
       if (result.cardNumber == null) {
+        span.complete(
+          details: {
+            'success': false,
+            'usedAi': _processingUsesAi,
+            'reason': 'noCardNumber',
+          },
+        );
+        AppLogService.instance.action(
+          'Scanning',
+          'Image processing completed without a card result',
+          details: {'source': fromGallery ? 'gallery' : 'camera'},
+        );
         final bestWarning = ranked.isEmpty
             ? null
             : ranked.first.quality.warning;
@@ -627,9 +690,23 @@ class _CardCameraScreenState extends State<CardCameraScreen>
         _processingMessage = 'Card found — opening review…';
       });
       HapticFeedback.lightImpact();
+      AppLogService.instance.action(
+        'Scanning',
+        'Image processing succeeded',
+        details: {
+          'source': fromGallery ? 'gallery' : 'camera',
+          'usedAi': _processingUsesAi,
+        },
+      );
+      span.complete(details: {'success': true, 'usedAi': _processingUsesAi});
       await Future<void>.delayed(const Duration(milliseconds: 320));
       if (mounted) await _popScanner(result);
-    } on AiCardScanException catch (error) {
+    } on AiCardScanException catch (error, stackTrace) {
+      span.fail(error, stackTrace);
+      AppLogService.instance.record(
+        'Scanning',
+        'AI-assisted scan failed: ${error.runtimeType}',
+      );
       if (mounted) {
         setState(() {
           _isProcessing = false;
@@ -646,7 +723,12 @@ class _CardCameraScreenState extends State<CardCameraScreen>
           ].join('\n');
         });
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
+      span.fail(error, stackTrace);
+      AppLogService.instance.record(
+        'Scanning',
+        'Image processing failed: ${error.runtimeType}',
+      );
       if (mounted) {
         setState(() {
           _isProcessing = false;
@@ -699,6 +781,14 @@ class _CardCameraScreenState extends State<CardCameraScreen>
               const SizedBox(height: 10),
               const Text(
                 'It does not send offline OCR text, other saved cards, or unrelated app data. The image itself may contain sensitive card details, and provider charges may apply.',
+              ),
+              const SizedBox(height: 10),
+              Text(settings.provider.retentionDisclosure),
+              const SizedBox(height: 10),
+              const Text(
+                'Choose Keep offline to continue without sending these '
+                'images.',
+                style: TextStyle(fontWeight: FontWeight.w700),
               ),
             ],
           ),

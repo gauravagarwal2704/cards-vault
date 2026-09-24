@@ -30,11 +30,9 @@ import com.stripe.android.camera.scanui.util.setDrawable
 import com.stripe.android.camera.scanui.util.startAnimation
 import com.stripe.android.stripecardscan.R
 import com.stripe.android.stripecardscan.camera.getScanCameraAdapter
-import com.stripe.android.stripecardscan.cardscan.exception.UnknownScanException
 import com.stripe.android.stripecardscan.cardscan.result.MainLoopAggregator
 import com.stripe.android.stripecardscan.cardscan.result.MainLoopState
 import com.stripe.android.stripecardscan.databinding.StripeActivityCardscanBinding
-import com.stripe.android.stripecardscan.payment.card.ScannedCard
 import com.stripe.android.stripecardscan.payment.ml.SSDOcr
 import com.stripe.android.stripecardscan.payment.ml.SSDOcrModelManager
 import com.stripe.android.stripecardscan.scanui.CancellationReason
@@ -55,22 +53,12 @@ import java.io.FileOutputStream
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-internal const val INTENT_PARAM_REQUEST = "request"
-internal const val INTENT_PARAM_RESULT = "result"
 const val CARD_SCAN_RESULT_PAN = "cards_wallet.cardscan.pan"
 const val CARD_SCAN_RESULT_IMAGE_PATH = "cards_wallet.cardscan.image_path"
 const val CARD_SCAN_RESULT_REASON = "cards_wallet.cardscan.reason"
 const val CARD_SCAN_RESULT_SOURCE = "cards_wallet.cardscan.source"
 
 private val MINIMUM_RESOLUTION = Size(1067, 600) // minimum size of OCR
-
-internal interface CardScanResultListener : ScanResultListener {
-
-    /**
-     * The scan completed.
-     */
-    fun cardScanComplete(card: ScannedCard)
-}
 
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 sealed class CardScanState(isFinal: Boolean) : ScanState(isFinal) {
@@ -136,15 +124,8 @@ internal class CardScanActivity : ScanActivity(), SimpleScanStateful<CardScanSta
     /**
      * The listener which handles results from the scan.
      */
-    override val resultListener: CardScanResultListener =
-        object : CardScanResultListener {
-
-            override fun cardScanComplete(card: ScannedCard) {
-                val intent = Intent()
-                    .putExtra(CARD_SCAN_RESULT_PAN, card.pan)
-                setResult(RESULT_OK, intent)
-            }
-
+    override val resultListener: ScanResultListener =
+        object : ScanResultListener {
             override fun userCanceled(reason: CancellationReason) {
                 val intent = Intent()
                     .putExtra(CARD_SCAN_RESULT_REASON, reason.javaClass.simpleName)
@@ -169,21 +150,25 @@ internal class CardScanActivity : ScanActivity(), SimpleScanStateful<CardScanSta
             override suspend fun onResult(
                 result: MainLoopAggregator.FinalResult
             ) {
-                launch(Dispatchers.Main) {
-                    if (isImportingGallery || isGalleryPickerOpen) {
-                        result.acceptedFrame.recycle()
-                        return@launch
+                try {
+                    withContext(Dispatchers.Main) {
+                        if (isImportingGallery || isGalleryPickerOpen) {
+                            return@withContext
+                        }
+                        sessionTimeoutJob?.cancel()
+                        changeScanState(CardScanState.Correct)
+                        cameraAdapter.unbindFromLifecycle(this@CardScanActivity)
+                        val imagePath = saveAcceptedFrame(result.acceptedFrame)
+                        val intent = Intent()
+                            .putExtra(CARD_SCAN_RESULT_PAN, result.pan)
+                            .putExtra(CARD_SCAN_RESULT_IMAGE_PATH, imagePath)
+                        setResult(RESULT_OK, intent)
+                        closeScanner()
                     }
-                    sessionTimeoutJob?.cancel()
-                    changeScanState(CardScanState.Correct)
-                    cameraAdapter.unbindFromLifecycle(this@CardScanActivity)
-                    val imagePath = saveAcceptedFrame(result.acceptedFrame)
-                    val intent = Intent()
-                        .putExtra(CARD_SCAN_RESULT_PAN, result.pan)
-                        .putExtra(CARD_SCAN_RESULT_IMAGE_PATH, imagePath)
-                    setResult(RESULT_OK, intent)
-                    closeScanner()
-                }.let { }
+                } finally {
+                    // Also runs when Main dispatch is cancelled during teardown.
+                    if (!result.acceptedFrame.isRecycled) result.acceptedFrame.recycle()
+                }
             }
 
             /**
@@ -517,7 +502,9 @@ internal class CardScanActivity : ScanActivity(), SimpleScanStateful<CardScanSta
                         }
                         if (rotation != 0f) candidatePath?.let { File(it).delete() }
                     } finally {
-                        input.acceptedFrameCandidate.recycle()
+                        if (!input.acceptedFrameCandidate.isRecycled) {
+                            input.acceptedFrameCandidate.recycle()
+                        }
                     }
                 } finally {
                     if (candidate !== bitmap) candidate.recycle()

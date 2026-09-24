@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/backup_crypto.dart';
 import '../theme/app_typography.dart';
 
 /// Asks for the password that protects a `.cwbak` file. Returns null when the
@@ -78,6 +79,15 @@ class _BackupPasswordDialogState extends State<BackupPasswordDialog> {
               ),
             ),
             const SizedBox(height: 16),
+            if (widget.requireConfirm) ...[
+              Text(
+                'Use $backupMinimumPasswordLength or more characters. This password cannot be recovered.',
+                style: AppTypography.caption().copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             TextFormField(
               controller: _passwordController,
               obscureText: _obscure,
@@ -101,8 +111,9 @@ class _BackupPasswordDialogState extends State<BackupPasswordDialog> {
                 if (value == null || value.isEmpty) {
                   return 'Password is required';
                 }
-                if (widget.requireConfirm && value.length < 6) {
-                  return 'At least 6 characters';
+                if (widget.requireConfirm &&
+                    value.length < backupMinimumPasswordLength) {
+                  return 'At least $backupMinimumPasswordLength characters';
                 }
                 return null;
               },

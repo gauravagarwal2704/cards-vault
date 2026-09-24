@@ -11,6 +11,7 @@ import 'bank_logo.dart';
 import 'card_background_surface.dart';
 import 'wallet_card_hero.dart';
 import 'card_network_logo.dart';
+import 'wallet_card.dart';
 
 const _tileAspectRatio = 1.586;
 const _tileSpacing = 12.0;
@@ -74,7 +75,13 @@ class CardTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bank = card.bankId != null ? Banks.getById(card.bankId!) : null;
+    final configuredBank = card.bankId != null
+        ? Banks.getById(card.bankId!)
+        : null;
+    final network = CardNetworkUtils.networkFromCardType(card.cardType);
+    final bank =
+        configuredBank ??
+        (network == CardNetwork.amex ? Banks.getById('amex') : null);
     final design = card.designId != null
         ? CardDesigns.getById(card.designId!)
         : null;
@@ -180,12 +187,8 @@ class CardTile extends StatelessWidget {
                                 ),
                                 CardNetworkLogo(
                                   cardNumber: '',
-                                  forceNetwork:
-                                      CardNetworkUtils.networkFromCardType(
-                                        card.cardType,
-                                      ),
+                                  forceNetwork: network,
                                   height: 18,
-                                  isInputField: false,
                                   backgroundColor: primaryColor,
                                 ),
                               ],

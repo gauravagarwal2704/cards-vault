@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/app_log_service.dart';
+
 /// Stores the small amount of personalisation CardVault needs on the device.
 class ProfileProvider extends ChangeNotifier {
   static const _displayNameKey = 'profile_display_name';
@@ -20,7 +22,13 @@ class ProfileProvider extends ChangeNotifier {
     try {
       final preferences = await SharedPreferences.getInstance();
       _displayName = preferences.getString(_displayNameKey)?.trim() ?? '';
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogService.instance.recordFailure(
+        'Load profile preference',
+        error,
+        stackTrace,
+        category: 'Failure/Preferences',
+      );
       debugPrint('Error loading profile: $error');
     } finally {
       _isInitialized = true;
@@ -34,11 +42,18 @@ class ProfileProvider extends ChangeNotifier {
 
     _displayName = normalized;
     notifyListeners();
+    AppLogService.instance.action('Profile', 'Display name changed');
 
     try {
       final preferences = await SharedPreferences.getInstance();
       await preferences.setString(_displayNameKey, normalized);
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogService.instance.recordFailure(
+        'Save profile preference',
+        error,
+        stackTrace,
+        category: 'Failure/Preferences',
+      );
       debugPrint('Error saving profile: $error');
     }
   }

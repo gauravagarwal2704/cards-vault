@@ -12,6 +12,7 @@ import '../data/card_designs.dart';
 import '../services/card_attachment_storage.dart';
 import '../services/card_background_storage.dart';
 import '../services/secure_card_storage.dart';
+import '../services/app_log_service.dart';
 import '../widgets/bank_logo.dart';
 import '../widgets/card_attachments.dart';
 import '../widgets/card_background_picker.dart';
@@ -73,6 +74,7 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
   @override
   void initState() {
     super.initState();
+    AppLogService.instance.action('Navigation', 'Opened manual card entry');
     _loadExistingCardholders();
   }
 
@@ -163,10 +165,20 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
         );
       }
 
+      AppLogService.instance.action(
+        'Cards',
+        'Card added manually',
+        details: {
+          'attachmentCount': _pendingAttachmentFiles.length,
+          'category': _cardCategory.name,
+        },
+      );
+
       if (mounted) {
         Navigator.pop(context, true);
       }
     } catch (e) {
+      AppLogService.instance.record('Cards', 'Manual card save failed: $e');
       if (newCardId != null && savedBackgroundPath != null) {
         await _backgroundStorage.deleteBackground(
           newCardId,
@@ -308,6 +320,7 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
         _buildCardNumberField(),
         const SizedBox(height: AppSpacing.md),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(child: _buildExpiryField()),
             const SizedBox(width: AppSpacing.md),
@@ -465,7 +478,6 @@ class _ManualAddCardScreenState extends State<ManualAddCardScreen> {
           child: CardNetworkLogo(
             cardNumber: _cardNumberController.text,
             height: 18,
-            isInputField: true,
           ),
         ),
       ),

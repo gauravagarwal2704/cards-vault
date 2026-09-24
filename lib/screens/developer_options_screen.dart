@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 
 import '../providers/theme_provider.dart';
 import '../services/auth_service.dart';
+import '../services/app_log_service.dart';
 import '../theme/app_typography.dart';
 import '../theme/app_colors.dart';
+import 'feedback_support_screen.dart';
 
 class DeveloperOptionsScreen extends StatefulWidget {
   const DeveloperOptionsScreen({super.key});
@@ -14,13 +16,29 @@ class DeveloperOptionsScreen extends StatefulWidget {
 }
 
 class _DeveloperOptionsScreenState extends State<DeveloperOptionsScreen> {
-  final _authService = AuthService();
   bool _testingAuthentication = false;
+  void _openFeedback() {
+    AppLogService.instance.action('Support', 'Share Logs selected');
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute(builder: (_) => const FeedbackSupportScreen()),
+    );
+  }
 
   Future<void> _testAuthentication() async {
     if (_testingAuthentication) return;
     setState(() => _testingAuthentication = true);
-    final authenticated = await _authService.authenticateForCardDetails();
+    final authentication =
+        context.read<AuthenticationCoordinator?>() ??
+        AuthenticationCoordinator();
+    final authenticated = await authentication.authorize(
+      ProtectedAction.testAuthentication,
+    );
+    AppLogService.instance.action(
+      'Security',
+      'Developer authentication test completed',
+      details: {'success': authenticated},
+    );
     if (!mounted) return;
     setState(() => _testingAuthentication = false);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -79,6 +97,37 @@ class _DeveloperOptionsScreenState extends State<DeveloperOptionsScreen> {
                 'Turn off to hide these tools and require five version taps again.',
                 style: AppTypography.caption(color: secondary),
               ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+            child: Text(
+              'Logs capture',
+              style: AppTypography.sectionTitle(color: primary),
+            ),
+          ),
+          Material(
+            color: theme.getCardColor(),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: theme.getOutlineColor()),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: ListTile(
+              key: const ValueKey('share-logs-developer-option'),
+              onTap: _openFeedback,
+              leading: Icon(Icons.share_outlined, color: secondary),
+              title: Text(
+                'Share Logs',
+                style: AppTypography.listItem(color: primary)
+                    .copyWith(fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                'Send feedback with optional logs and device details',
+                style: AppTypography.caption(color: secondary),
+              ),
+              trailing: Icon(Icons.chevron_right, color: secondary),
             ),
           ),
           const SizedBox(height: 12),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -9,32 +11,63 @@ import 'providers/theme_provider.dart';
 import 'providers/app_lock_provider.dart';
 import 'providers/app_icon_provider.dart';
 import 'providers/profile_provider.dart';
+import 'services/auth_service.dart';
 import 'models/app_icon_option.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/saved_cards_screen.dart';
+import 'services/security_service.dart';
+import 'services/app_log_service.dart';
 import 'theme/app_motion.dart';
 import 'theme/app_theme.dart';
 import 'widgets/app_icon_artwork.dart';
+import 'utils/debug_logger.dart';
 
 bool _nativeSplashDeferred = false;
 
 void main() {
-  final binding = WidgetsFlutterBinding.ensureInitialized();
-  binding.deferFirstFrame();
-  _nativeSplashDeferred = true;
-  runApp(const MyApp());
+  runZonedGuarded<void>(
+    () {
+      final binding = WidgetsFlutterBinding.ensureInitialized();
+      AppLogService.instance.startCapture();
+      unawaited(DebugLogger.initialize());
+      binding.deferFirstFrame();
+      _nativeSplashDeferred = true;
+      runApp(const MyApp());
+    },
+    (error, stackTrace) {
+      AppLogService.instance.recordFailure(
+        'Unhandled Dart zone error',
+        error,
+        stackTrace,
+        category: 'DartZone',
+        fatal: true,
+      );
+    },
+  );
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({
+    super.key,
+    this.appLockProviderFactory,
+    this.securityInitializer,
+  });
+
+  final AppLockProvider Function()? appLockProviderFactory;
+  final Future<void> Function()? securityInitializer;
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        Provider<AuthenticationCoordinator>.value(
+          value: SecurityService().authentication,
+        ),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => AppIconProvider()),
-        ChangeNotifierProvider(create: (_) => AppLockProvider()),
+        ChangeNotifierProvider(
+          create: (_) => appLockProviderFactory?.call() ?? AppLockProvider(),
+        ),
         ChangeNotifierProvider(create: (_) => NfcProvider()),
         ChangeNotifierProvider(create: (_) => CameraProvider()),
         ChangeNotifierProvider(create: (_) => CardViewProvider()),
@@ -60,7 +93,7 @@ class MyApp extends StatelessWidget {
                 child: child ?? const SizedBox.shrink(),
               );
             },
-            home: const _AppEntry(),
+            home: _AppEntry(securityInitializer: securityInitializer),
           );
         },
       ),
@@ -69,7 +102,9 @@ class MyApp extends StatelessWidget {
 }
 
 class _AppEntry extends StatefulWidget {
-  const _AppEntry();
+  const _AppEntry({this.securityInitializer});
+
+  final Future<void> Function()? securityInitializer;
 
   @override
   State<_AppEntry> createState() => _AppEntryState();
@@ -78,14 +113,43 @@ class _AppEntry extends StatefulWidget {
 class _AppEntryState extends State<_AppEntry> {
   bool _showSelectedIconSplash = true;
   bool _splashExitScheduled = false;
+  bool _securityInitialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeSecurity();
+  }
+
+  Future<void> _initializeSecurity() async {
+    final span = AppLogService.instance.startSpan(
+      'Startup',
+      'Initialize security',
+    );
+    try {
+      await (widget.securityInitializer ?? SecurityService().initialize)();
+      span.complete();
+      if (mounted) setState(() => _securityInitialized = true);
+    } catch (error, stackTrace) {
+      span.fail(error, stackTrace);
+      // Remain on the non-sensitive initialization surface if native security
+      // controls cannot be established.
+      debugPrint('Security initialization failed: $error');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final profile = context.watch<ProfileProvider>();
     final theme = context.watch<ThemeProvider>();
     final appIcon = context.watch<AppIconProvider>();
+    final appLock = context.watch<AppLockProvider>();
     final ready =
-        profile.isInitialized && theme.isInitialized && appIcon.isInitialized;
+        _securityInitialized &&
+        appLock.isInitialized &&
+        profile.isInitialized &&
+        theme.isInitialized &&
+        appIcon.isInitialized;
     if (ready && !_splashExitScheduled) {
       _splashExitScheduled = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -168,27 +232,13 @@ class _AppLockWrapper extends StatelessWidget {
       });
     }
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Keep the home screen mounted so async init/load isn't disposed mid-flight.
-        TickerMode(
-          enabled: !appLockProvider.isLocked,
-          child: ExcludeSemantics(
-            excluding: appLockProvider.isLocked,
-            child: IgnorePointer(
-              ignoring: appLockProvider.isLocked,
-              child: child,
-            ),
-          ),
-        ),
-        if (appLockProvider.isLocked)
-          ColoredBox(
-            color: Theme.of(context).colorScheme.surface,
-            child: const _AppLockOverlay(),
-          ),
-      ],
-    );
+    if (appLockProvider.isLocked) {
+      return ColoredBox(
+        color: Theme.of(context).colorScheme.surface,
+        child: const _AppLockOverlay(),
+      );
+    }
+    return child;
   }
 }
 

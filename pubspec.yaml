@@ -21,57 +21,57 @@ version: 1.2.1+7
 environment:
   sdk: ^3.13.0
 
-# Dependencies specify other packages that your package needs in order to work.
-# To automatically upgrade your package dependencies to the latest versions
-# consider running `flutter pub upgrade --major-versions`. Alternatively,
-# dependencies can be manually updated by changing the version numbers below to
-# the latest version available on pub.dev. To see which dependencies have newer
-# versions available, run `flutter pub outdated`.
+# Application dependencies are pinned to the reviewed pubspec.lock versions.
+# Dependabot proposes upgrades on the maintenance schedule documented in
+# docs/dependency-maintenance.md.
 dependencies:
   flutter:
     sdk: flutter
-  share_plus: ^10.0.0
+  share_plus: 10.1.4
   
   # SVG rendering
-  flutter_svg: ^2.0.0
+  flutter_svg: 2.3.0
   
   # NFC functionality for reading credit card data
-  flutter_nfc_kit: ^3.3.1
+  flutter_nfc_kit: 3.6.2
   
   # State management
-  provider: ^6.1.1
+  provider: 6.1.5+1
   
   # File path utilities
-  path_provider: ^2.1.1
+  path_provider: 2.1.6
   
   # Shared preferences
-  shared_preferences: ^2.2.2
+  shared_preferences: 2.5.5
   
   # File picker
-  file_picker: ^10.3.10
+  file_picker: 10.3.10
   
   # Package info
-  package_info_plus: ^8.3.1
+  package_info_plus: 8.3.1
+
+  # Open external project and support links
+  url_launcher: 6.3.2
   
   # Security packages
-  flutter_secure_storage: ^9.0.0
-  encrypt: ^5.0.3
-  local_auth: ^2.1.8
-  crypto: ^3.0.3
-  pointycastle: ^3.9.1
-  uuid: ^4.2.2
+  flutter_secure_storage: 9.2.4
+  encrypt: 5.0.3
+  local_auth: 2.3.0
+  crypto: 3.0.7
+  pointycastle: 3.9.1
+  uuid: 4.6.0
   
   # OCR and Camera functionality
-  image_picker: ^1.0.7
-  image: ^4.1.7
-  camera: ^0.10.5+9
-  image_cropper: ^11.0.0
+  image_picker: 1.2.3
+  image: 4.3.0
+  camera: 0.10.6
+  image_cropper: 11.0.0
 
   # Deep links into system settings (NFC, app permissions)
-  app_settings: ^5.1.1
+  app_settings: 5.2.0
 
   # Zip bundling for backups that include card photos
-  archive: ^3.6.1
+  archive: 3.6.1
 
 dev_dependencies:
   flutter_test:
@@ -82,7 +82,7 @@ dev_dependencies:
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^6.0.0
+  flutter_lints: 6.0.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -122,5 +122,3 @@ flutter:
           weight: 600
         - asset: assets/fonts/Outfit-Bold.ttf
           weight: 700
-        - asset: assets/fonts/Outfit-ExtraBold.ttf
-          weight: 800

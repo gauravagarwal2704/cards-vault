@@ -6,6 +6,7 @@ import 'package:flutter_nfc_kit/flutter_nfc_kit.dart';
 
 import '../models/card_data.dart';
 import '../services/nfc_service.dart';
+import '../services/app_log_service.dart';
 
 enum NfcState { idle, checking, scanning, success, error }
 
@@ -36,12 +37,20 @@ class NfcProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool get isNfcEnabled => _availability == NFCAvailability.available;
 
   Future<void> checkNfcAvailability() async {
+    final span = AppLogService.instance.startSpan('NFC', 'Check availability');
     _state = NfcState.checking;
     notifyListeners();
-
-    _availability = await _nfcService.getNfcAvailability();
-    _state = NfcState.idle;
-    notifyListeners();
+    try {
+      _availability = await _nfcService.getNfcAvailability();
+      _state = NfcState.idle;
+      span.complete(details: {'availability': _availability.name});
+      notifyListeners();
+    } catch (error, stackTrace) {
+      _state = NfcState.error;
+      _errorMessage = 'Could not check NFC availability.';
+      span.fail(error, stackTrace);
+      notifyListeners();
+    }
   }
 
   @override
@@ -60,6 +69,7 @@ class NfcProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> readCard() async {
+    final span = AppLogService.instance.startSpan('NFC', 'Read card');
     _state = NfcState.scanning;
     _errorMessage = null;
     _cardData = null;
@@ -81,8 +91,10 @@ class NfcProvider extends ChangeNotifier with WidgetsBindingObserver {
         _state = NfcState.error;
         _errorMessage = 'Failed to read card data';
       }
+      span.complete(details: {'success': card != null});
       notifyListeners();
-    } on PlatformException catch (e) {
+    } on PlatformException catch (e, stackTrace) {
+      span.fail(e, stackTrace);
       _state = NfcState.error;
 
       if (e.code == 'IOS_NOT_SUPPORTED') {
@@ -100,7 +112,8 @@ class NfcProvider extends ChangeNotifier with WidgetsBindingObserver {
       }
 
       notifyListeners();
-    } catch (e) {
+    } catch (e, stackTrace) {
+      span.fail(e, stackTrace);
       _state = NfcState.error;
 
       String errorString = e.toString().toLowerCase();

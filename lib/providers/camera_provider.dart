@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/camera_service.dart';
 import '../services/ocr_service.dart';
+import '../services/app_log_service.dart';
 
 enum CameraState { idle, capturing, validating, processing, success, error }
 
@@ -17,10 +18,15 @@ class CameraProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
 
   Future<void> captureAndProcessCard(BuildContext context) async {
+    final span = AppLogService.instance.startSpan(
+      'Scanning',
+      'Capture and process card',
+    );
     _beginCapture();
     try {
       final result = await _cameraService.scanCard(context);
       if (result == null) {
+        span.complete(details: {'cancelled': true});
         _state = CameraState.idle;
         notifyListeners();
         return;
@@ -28,8 +34,10 @@ class CameraProvider extends ChangeNotifier {
       _ocrResult = result;
       _state = CameraState.success;
       _errorMessage = null;
+      span.complete(details: {'success': true});
       notifyListeners();
-    } catch (error) {
+    } catch (error, stackTrace) {
+      span.fail(error, stackTrace);
       _handleError(error, gallery: false);
     }
   }

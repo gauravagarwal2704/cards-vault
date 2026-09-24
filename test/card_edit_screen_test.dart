@@ -102,4 +102,40 @@ void main() {
     expect(find.textContaining('Brightness'), findsNothing);
     expect(find.textContaining('Sharpness'), findsNothing);
   });
+
+  testWidgets('validation errors keep expiry and CVV fields top-aligned', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final themeProvider = ThemeProvider();
+    addTearDown(themeProvider.dispose);
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: themeProvider,
+        child: MaterialApp(
+          theme: themeProvider.lightTheme,
+          home: const CardEditScreen(
+            ocrResult: OCRResult(
+              cardNumber: '4111111111111111',
+              expiryDate: '07/30',
+              cardholderName: 'Test User',
+              cardType: 'Visa',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final fields = find.byType(TextFormField);
+    await tester.enterText(fields.at(1), '1330');
+    await tester.tap(find.byKey(const ValueKey('card-editor-save')));
+    await tester.pump();
+
+    expect(find.text('Invalid'), findsOneWidget);
+    expect(
+      tester.getTopLeft(fields.at(1)).dy,
+      closeTo(tester.getTopLeft(fields.at(2)).dy, 0.01),
+    );
+  });
 }

@@ -25,3 +25,10 @@
 -keep,allowobfuscation,allowshrinking interface retrofit2.Call
 -keep,allowobfuscation,allowshrinking class retrofit2.Response
 -keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation
+
+# WorkManager 2.9.1 uses Room 2.5.0 to load this generated database via
+# Class.newInstance(). R8 full mode keeps the class name via Room's consumer
+# rules, but can still remove its otherwise-unreferenced no-argument constructor.
+-keepclassmembers class androidx.work.impl.WorkDatabase_Impl {
+    public <init>();
+}

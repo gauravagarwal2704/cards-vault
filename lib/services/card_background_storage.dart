@@ -1,7 +1,8 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:path_provider/path_provider.dart';
+import 'storage_path_guard.dart';
+import 'app_log_service.dart';
 
 /// Stores user-selected card artwork outside secure metadata storage.
 ///
@@ -22,43 +23,77 @@ class CardBackgroundStorage {
     Uint8List bytes, {
     String extension = '.img',
   }) async {
-    final directory = await _cardDirectory(cardId);
-    await directory.create(recursive: true);
-    final safeExtension = _safeExtension('file$extension');
-    final file = File(
-      '${directory.path}/background_${DateTime.now().microsecondsSinceEpoch}$safeExtension',
-    );
-    await file.writeAsBytes(bytes, flush: true);
-    return file.path;
+    return AppLogService.instance.trace('Storage', 'Save card background', () async {
+      final directory = await _cardDirectory(cardId, create: true);
+      final safeExtension = _safeExtension('file$extension');
+      final file = File(
+        '${directory.path}/background_${DateTime.now().microsecondsSinceEpoch}$safeExtension',
+      );
+      await file.writeAsBytes(bytes, flush: true);
+      return file.path;
+    }, details: {'byteCount': bytes.length});
   }
 
   Future<Uint8List?> loadBytes(String? path) async {
     if (path == null || path.isEmpty) return null;
-    final file = File(path);
-    if (!await file.exists()) return null;
-    return file.readAsBytes();
+    try {
+      final file = File(path);
+      if (!await file.exists() ||
+          !await isContainedInStorageDirectory('card_backgrounds', path)) {
+        return null;
+      }
+      return await file.readAsBytes();
+    } catch (error, stackTrace) {
+      AppLogService.instance.recordFailure(
+        'Load card background',
+        error,
+        stackTrace,
+        category: 'Failure/Storage',
+      );
+      return null;
+    }
   }
 
   Future<void> deleteBackground(String cardId, String? path) async {
     if (path == null || path.isEmpty) return;
-    final directory = await _cardDirectory(cardId);
-    final expectedPrefix =
-        '${directory.absolute.path}${Platform.pathSeparator}';
-    final file = File(path).absolute;
-    if (!file.path.startsWith(expectedPrefix)) return;
-    if (await file.exists()) await file.delete();
+    await AppLogService.instance.trace(
+      'Storage',
+      'Delete card background',
+      () async {
+        final directory = await _cardDirectory(cardId);
+        if (!await directory.exists()) return;
+        final file = File(path);
+        if (!await isContainedInStorageDirectory('card_backgrounds', path)) {
+          return;
+        }
+        final canonicalDirectory = await directory.resolveSymbolicLinks();
+        final canonicalFile = await file.resolveSymbolicLinks();
+        final expectedPrefix = '$canonicalDirectory${Platform.pathSeparator}';
+        if (!canonicalFile.startsWith(expectedPrefix)) return;
+        if (await file.exists()) await file.delete();
+      },
+    );
   }
 
   Future<void> deleteAllForCard(String cardId) async {
-    final directory = await _cardDirectory(cardId);
-    if (await directory.exists()) {
-      await directory.delete(recursive: true);
-    }
+    await AppLogService.instance.trace(
+      'Storage',
+      'Delete all card backgrounds',
+      () async {
+        final directory = await _cardDirectory(cardId);
+        if (await directory.exists()) {
+          await directory.delete(recursive: true);
+        }
+      },
+    );
   }
 
-  Future<Directory> _cardDirectory(String cardId) async {
-    final root = await getApplicationDocumentsDirectory();
-    return Directory('${root.path}/card_backgrounds/$cardId');
+  Future<Directory> _cardDirectory(String cardId, {bool create = false}) async {
+    return containedCardStorageDirectory(
+      'card_backgrounds',
+      cardId,
+      create: create,
+    );
   }
 
   String _safeExtension(String path) {

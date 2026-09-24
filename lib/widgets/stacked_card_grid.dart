@@ -66,8 +66,8 @@ class CardStack {
 class StackedCardGrid extends StatefulWidget {
   final List<CardStack> stacks;
 
-  /// Identifies the grouping the [stacks] were built from. When it changes the
-  /// grid replays its regroup animation instead of cutting to the new layout.
+  /// Identifies the grouping the [stacks] were built from. Axis changes replace
+  /// the layout atomically so an outgoing grid cannot flash behind the next one.
   final String axisKey;
 
   /// Enables long-press dragging a loose card onto another tile to group them.
@@ -105,6 +105,13 @@ class _StackedCardGridState extends State<StackedCardGrid> {
   /// Lives for the duration of one drag, so a drag that reaches the top or
   /// bottom edge can scroll the grid to tiles that are off screen.
   EdgeDraggingAutoScroller? _autoScroller;
+  bool _animateEntries = true;
+
+  @override
+  void didUpdateWidget(covariant StackedCardGrid oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _animateEntries = oldWidget.axisKey == widget.axisKey;
+  }
 
   void _onDragStarted(BuildContext tileContext) {
     final scrollable = Scrollable.maybeOf(tileContext);
@@ -161,18 +168,7 @@ class _StackedCardGridState extends State<StackedCardGrid> {
 
   @override
   Widget build(BuildContext context) {
-    // Keying on the axis rebuilds the subtree from scratch when the grouping
-    // changes, which is what restarts the per-tile entry animations.
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 200),
-      switchInCurve: Curves.easeOut,
-      switchOutCurve: Curves.easeIn,
-      layoutBuilder: (currentChild, previousChildren) => Stack(
-        alignment: Alignment.topCenter,
-        children: [...previousChildren, ?currentChild],
-      ),
-      child: KeyedSubtree(key: ValueKey(widget.axisKey), child: _buildGrid()),
-    );
+    return _buildGrid();
   }
 
   Widget _buildGrid() {
@@ -215,6 +211,7 @@ class _StackedCardGridState extends State<StackedCardGrid> {
     return _RegroupEntry(
       key: ValueKey(stack.key),
       index: index,
+      animate: _animateEntries,
       child: _StackTile(
         stack: stack,
         onTap: () => _onStackTap(stack),
@@ -237,9 +234,15 @@ class _StackedCardGridState extends State<StackedCardGrid> {
 /// reads as the cards rearranging rather than the grid cutting to a new layout.
 class _RegroupEntry extends StatefulWidget {
   final int index;
+  final bool animate;
   final Widget child;
 
-  const _RegroupEntry({super.key, required this.index, required this.child});
+  const _RegroupEntry({
+    super.key,
+    required this.index,
+    required this.animate,
+    required this.child,
+  });
 
   @override
   State<_RegroupEntry> createState() => _RegroupEntryState();
@@ -249,22 +252,27 @@ class _RegroupEntryState extends State<_RegroupEntry>
     with SingleTickerProviderStateMixin {
   static const _stagger = Duration(milliseconds: 30);
 
-  late final AnimationController _controller = AnimationController(
-    duration: const Duration(milliseconds: 260),
-    vsync: this,
-  );
-  late final Animation<double> _animation = CurvedAnimation(
-    parent: _controller,
-    curve: Curves.easeOutCubic,
-  );
+  late final AnimationController _controller;
+  late final Animation<double> _animation;
   Timer? _startTimer;
 
   @override
   void initState() {
     super.initState();
-    _startTimer = Timer(_stagger * widget.index, () {
-      if (mounted) _controller.forward();
-    });
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 260),
+      value: widget.animate ? 0 : 1,
+      vsync: this,
+    );
+    _animation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    );
+    if (widget.animate) {
+      _startTimer = Timer(_stagger * widget.index, () {
+        if (mounted) _controller.forward();
+      });
+    }
   }
 
   @override

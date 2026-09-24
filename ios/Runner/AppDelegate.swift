@@ -1,8 +1,9 @@
 import Flutter
+import MessageUI
 import UIKit
 
 @main
-@objc class AppDelegate: FlutterAppDelegate {
+@objc class AppDelegate: FlutterAppDelegate, MFMailComposeViewControllerDelegate {
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -86,8 +87,98 @@ import UIKit
           }
         }
       }
+
+      let supportChannel = FlutterMethodChannel(
+        name: "cards_wallet/support",
+        binaryMessenger: controller.binaryMessenger
+      )
+      supportChannel.setMethodCallHandler { [weak self, weak controller] call, result in
+        guard let self else {
+          result(
+            FlutterError(
+              code: "email_unavailable",
+              message: "The email composer is unavailable.",
+              details: nil
+            )
+          )
+          return
+        }
+
+        switch call.method {
+        case "getDeviceDetails":
+          let device = UIDevice.current
+          result([
+            "platform": "iOS",
+            "manufacturer": "Apple",
+            "model": device.model,
+            "device": device.name,
+            "osVersion": device.systemVersion,
+          ])
+        case "composeEmail":
+          guard
+            let arguments = call.arguments as? [String: Any],
+            let recipient = arguments["recipient"] as? String
+          else {
+            result(
+              FlutterError(
+                code: "invalid_email",
+                message: "Email recipient is missing.",
+                details: nil
+              )
+            )
+            return
+          }
+          guard MFMailComposeViewController.canSendMail() else {
+            result(
+              FlutterError(
+                code: "email_unavailable",
+                message: "No email account is configured in Mail.",
+                details: nil
+              )
+            )
+            return
+          }
+          let composer = MFMailComposeViewController()
+          composer.mailComposeDelegate = self
+          composer.setToRecipients([recipient])
+          composer.setSubject(arguments["subject"] as? String ?? "CardVault diagnostic logs")
+          composer.setMessageBody(arguments["body"] as? String ?? "", isHTML: false)
+          if let attachmentPath = arguments["attachmentPath"] as? String {
+            guard let attachment = try? Data(
+              contentsOf: URL(fileURLWithPath: attachmentPath)
+            ) else {
+              result(
+                FlutterError(
+                  code: "missing_attachment",
+                  message: "The diagnostic log file was not found.",
+                  details: nil
+                )
+              )
+              return
+            }
+            composer.addAttachmentData(
+              attachment,
+              mimeType: "text/plain",
+              fileName: URL(fileURLWithPath: attachmentPath).lastPathComponent
+            )
+          }
+          controller?.present(composer, animated: true) {
+            result(true)
+          }
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      }
     }
 
     return launched
+  }
+
+  func mailComposeController(
+    _ controller: MFMailComposeViewController,
+    didFinishWith result: MFMailComposeResult,
+    error: Error?
+  ) {
+    controller.dismiss(animated: true)
   }
 }

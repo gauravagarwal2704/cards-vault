@@ -2,8 +2,10 @@ import 'package:cards_wallet/models/card_data.dart';
 import 'package:cards_wallet/providers/theme_provider.dart';
 import 'package:cards_wallet/screens/card_detail_screen.dart';
 import 'package:cards_wallet/screens/card_edit_screen.dart';
+import 'package:cards_wallet/services/auth_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -40,8 +42,13 @@ class _DetailTestCard extends CardData {
 }
 
 Widget _testApp() {
-  return ChangeNotifierProvider(
-    create: (_) => ThemeProvider(),
+  return MultiProvider(
+    providers: [
+      Provider<AuthenticationCoordinator>.value(
+        value: AuthenticationCoordinator.forTesting(_AllowAuthentication()),
+      ),
+      ChangeNotifierProvider(create: (_) => ThemeProvider()),
+    ],
     child: Consumer<ThemeProvider>(
       builder: (context, themeProvider, _) => MaterialApp(
         theme: themeProvider.lightTheme,
@@ -63,6 +70,32 @@ Widget _testApp() {
       ),
     ),
   );
+}
+
+class _AllowAuthentication implements AuthenticationBackend {
+  @override
+  bool isAuthenticationInProgress = false;
+  @override
+  String? get lastErrorMessage => null;
+
+  @override
+  Future<bool> authenticateForProtectedAction({required String reason}) async =>
+      true;
+
+  @override
+  Future<bool> authenticateForAppLock(BuildContext context) async => true;
+
+  @override
+  Future<void> cancelAuthentication() async {}
+
+  @override
+  void clearCardDetailsAuthCooldown() {}
+
+  @override
+  Future<List<BiometricType>> getAvailableBiometrics() async => const [];
+
+  @override
+  Future<void> prepareForAppLock() async {}
 }
 
 void main() {

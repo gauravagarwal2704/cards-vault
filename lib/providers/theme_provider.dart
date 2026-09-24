@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/theme_config.dart' as config;
 import '../theme/app_theme.dart';
+import '../services/app_log_service.dart';
 
 class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   static const String _legacyThemeKey = 'selected_theme_mode';
@@ -164,7 +165,13 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       }
 
       _rebuildThemes();
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogService.instance.recordFailure(
+        'Load appearance preferences',
+        error,
+        stackTrace,
+        category: 'Failure/Preferences',
+      );
       debugPrint('Error loading theme: $error');
     } finally {
       _isInitialized = true;
@@ -188,12 +195,23 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       } else {
         await prefs.remove(_accentIdKey);
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogService.instance.recordFailure(
+        'Save appearance preferences',
+        error,
+        stackTrace,
+        category: 'Failure/Preferences',
+      );
       debugPrint('Error saving theme: $error');
     }
   }
 
   Future<void> setBrightnessMode(config.AppBrightnessMode mode) async {
+    AppLogService.instance.action(
+      'Appearance',
+      'Brightness mode changed',
+      details: {'mode': mode.name},
+    );
     if (_brightnessMode == mode) return;
     _brightnessMode = mode;
     await _persist();
@@ -201,6 +219,11 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> setPaletteStrategy(config.AppPaletteStrategy strategy) async {
+    AppLogService.instance.action(
+      'Appearance',
+      'Palette strategy changed',
+      details: {'strategy': strategy.name},
+    );
     if (_paletteStrategy == strategy) return;
     _paletteStrategy = strategy;
     _rebuildThemes();
@@ -209,6 +232,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> useSystemColorSource() async {
+    AppLogService.instance.action('Appearance', 'System colors selected');
     if (_colorSource == config.AppColorSource.system) return;
     _colorSource = config.AppColorSource.system;
     _accentId ??= config.AccentColorOption.indigo.id;
@@ -218,6 +242,11 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> setAccentColor(config.AccentColorOption option) async {
+    AppLogService.instance.action(
+      'Appearance',
+      'Preset accent selected',
+      details: {'accent': option.id},
+    );
     _accentId = option.id;
     _seedColor = option.seedColor;
     _colorSource = config.AppColorSource.preset;
@@ -227,6 +256,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> setCustomSeedColor(Color color) async {
+    AppLogService.instance.action('Appearance', 'Custom color selected');
     _seedColor = color;
     _accentId = null;
     _colorSource = config.AppColorSource.custom;

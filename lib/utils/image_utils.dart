@@ -36,6 +36,41 @@ class ImageUtils {
   static const int minCardShortEdge = 280;
   static const int minCardLongEdge = 440;
 
+  // Decode card artwork into a small set of physical-pixel widths. Keeping the
+  // widths stable is important during hero/deck animations: an exact width for
+  // every intermediate layout frame would create a new ImageCache entry and
+  // trigger another decode.
+  static const List<int> _cardDisplayCacheWidths = [
+    512,
+    768,
+    1024,
+    1280,
+    1600,
+    2048,
+  ];
+
+  /// Returns a bounded, reusable decode width for a card image.
+  ///
+  /// Supplying only the width to Flutter's image decoder preserves the source
+  /// aspect ratio while avoiding a source-resolution bitmap in memory.
+  static int? cardDisplayCacheWidth(
+    double logicalWidth,
+    double devicePixelRatio,
+  ) {
+    if (!logicalWidth.isFinite ||
+        logicalWidth <= 0 ||
+        !devicePixelRatio.isFinite ||
+        devicePixelRatio <= 0) {
+      return null;
+    }
+
+    final requiredWidth = (logicalWidth * devicePixelRatio).ceil();
+    for (final width in _cardDisplayCacheWidths) {
+      if (requiredWidth <= width) return width;
+    }
+    return _cardDisplayCacheWidths.last;
+  }
+
   static img.Image cropToNormalizedCard(
     img.Image image,
     NormalizedCardCrop crop, {

@@ -46,7 +46,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static final Uri _repositoryUrl = Uri.parse(
     'https://github.com/gauravagarwal2704/cards-wallet',
   );
-  static final Uri _telegramUrl = Uri.parse('https://t.me/gauravagarwal27');
+  static final Uri _telegramUrl = Uri.parse('https://t.me/CardVaultApp');
   static final Uri _buyMeACoffeeUrl = Uri.parse(
     'https://buymeacoffee.com/gauravagarwal',
   );

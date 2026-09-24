@@ -18,6 +18,10 @@ void main() {
     expect(find.text('Camera, photos, and NFC'), findsOneWidget);
     expect(find.text('Retention and deletion'), findsOneWidget);
     expect(find.textContaining('SmartAI'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('published-privacy-policy-link')),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('privacy-contact-link')), findsOneWidget);
   });
 }

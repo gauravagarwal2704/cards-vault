@@ -64,7 +64,7 @@ A Flutter application that reads credit card data via NFC on Android devices usi
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd cards-wallet
+   cd cards-vault
    ```
 
 2. **Install dependencies**

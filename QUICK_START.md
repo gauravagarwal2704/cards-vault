@@ -11,7 +11,7 @@
 
 ```bash
 # 1. Navigate to project
-cd cards-wallet
+cd cards-vault
 
 # 2. Install dependencies
 flutter pub get
@@ -190,7 +190,7 @@ bool isValid() {
    ```
 
 2. **Card OCR**: Android scanning uses the native Tesseract4Android bridge in
-   `android/app/src/main/kotlin/com/cardswallet/cards_wallet/ocr/`. iOS OCR is
+   `android/app/src/main/kotlin/com/cardswallet/cards_vault/ocr/`. iOS OCR is
    intentionally deferred.
 
 3. **Add Database**: Store multiple cards

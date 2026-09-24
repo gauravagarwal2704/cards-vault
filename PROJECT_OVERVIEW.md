@@ -39,7 +39,7 @@ A Flutter-based credit card wallet application that reads EMV chip data from con
 ## 📂 Project Structure
 
 ```
-cards-wallet/
+cards-vault/
 ├── lib/
 │   ├── main.dart                      # App entry point
 │   ├── models/
@@ -244,7 +244,7 @@ UI Update (Card Preview)
 ### Quick Start
 ```bash
 # Clone and setup
-cd cards-wallet
+cd cards-vault
 flutter pub get
 
 # Run on Android device
@@ -391,4 +391,3 @@ This project demonstrates:
 **Built with ❤️ using Flutter**
 
 *A complete NFC credit card reader implementation for educational and development purposes.*
-

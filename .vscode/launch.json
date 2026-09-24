@@ -5,31 +5,31 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "cards-wallet",
+      "name": "cards-vault",
       "request": "launch",
       "type": "dart"
     },
     {
-      "name": "cards-wallet (profile mode)",
+      "name": "cards-vault (profile mode)",
       "request": "launch",
       "type": "dart",
       "flutterMode": "profile"
     },
     {
-      "name": "cards-wallet (release mode)",
+      "name": "cards-vault (release mode)",
       "request": "launch",
       "type": "dart",
       "flutterMode": "release"
     },
     {
-      "name": "cards-wallet - Pixel 6",
+      "name": "cards-vault - Pixel 6",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart",
       "deviceId": "emulator-5554"
     },
     {
-      "name": "cards-wallet - OnePlus 13",
+      "name": "cards-vault - OnePlus 13",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart",

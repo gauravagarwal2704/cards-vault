@@ -44,7 +44,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   static const String _developerOptionsEnabledKey = 'developer_options_enabled';
   static final Uri _repositoryUrl = Uri.parse(
-    'https://github.com/gauravagarwal2704/cards-wallet',
+    'https://github.com/gauravagarwal2704/cards-vault',
   );
   static final Uri _telegramUrl = Uri.parse('https://t.me/CardVaultApp');
   static final Uri _buyMeACoffeeUrl = Uri.parse(

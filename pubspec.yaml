@@ -33,7 +33,7 @@ dependencies:
   flutter_svg: 2.3.0
   
   # NFC functionality for reading credit card data
-  flutter_nfc_kit: 3.6.2
+  flutter_nfc_kit: 3.7.0
   
   # State management
   provider: 6.1.5+1
@@ -42,7 +42,7 @@ dependencies:
   path_provider: 2.1.6
   
   # Shared preferences
-  shared_preferences: 2.5.5
+  shared_preferences: 2.5.6
   
   # File picker
   file_picker: 10.3.10
@@ -54,7 +54,7 @@ dependencies:
   in_app_purchase: 3.3.1
 
   # Open external project and support links
-  url_launcher: 6.3.2
+  url_launcher: 6.3.3
   
   # Security packages
   flutter_secure_storage: 9.2.4
@@ -65,16 +65,16 @@ dependencies:
   uuid: 4.6.0
   
   # OCR and Camera functionality
-  image_picker: 1.2.3
-  image: 4.3.0
-  camera: 0.10.6
+  image_picker: 1.2.4
+  image: 4.12.0
+  camera: 0.12.1
   image_cropper: 11.0.0
 
   # Deep links into system settings (NFC, app permissions)
   app_settings: 5.2.0
 
   # Zip bundling for backups that include card photos
-  archive: 3.6.1
+  archive: 4.5.2
 
 dev_dependencies:
   flutter_test:

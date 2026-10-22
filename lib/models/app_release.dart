@@ -13,6 +13,14 @@ class AppRelease {
 
   static const history = [
     AppRelease(
+      version: '1.8.18',
+      buildNumber: 37,
+      date: '22 October 2026',
+      changes: [
+        'Prepared a fresh Google Play closed-testing build with the latest CardVault improvements. App features are unchanged from the previous version.',
+      ],
+    ),
+    AppRelease(
       version: '1.8.17',
       buildNumber: 36,
       date: '22 October 2026',

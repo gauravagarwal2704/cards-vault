@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.8.18+37] - 2026-10-22
+
+### Changed
+- Prepared a fresh Google Play closed-testing build with the latest CardVault improvements. App features are unchanged from the previous version.
+
 ## [1.8.17+36] - 2026-10-22
 
 ### Changed

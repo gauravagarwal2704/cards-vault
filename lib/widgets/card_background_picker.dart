@@ -30,7 +30,6 @@ class CardBackgroundPicker extends StatelessWidget {
   final ValueChanged<double> onBackgroundImageBlurChanged;
   final CardImagePlacement imagePlacement;
   final ValueChanged<CardImagePlacement>? onImagePlacementChanged;
-  final Widget Function(CardImagePlacement)? imagePreviewBuilder;
   final CardOverlayVisibility overlayVisibility;
   final ValueChanged<CardOverlayVisibility>? onOverlayVisibilityChanged;
 
@@ -53,7 +52,6 @@ class CardBackgroundPicker extends StatelessWidget {
     required this.onBackgroundImageBlurChanged,
     this.imagePlacement = const CardImagePlacement(),
     this.onImagePlacementChanged,
-    this.imagePreviewBuilder,
     this.overlayVisibility = const CardOverlayVisibility(),
     this.onOverlayVisibilityChanged,
   });
@@ -385,18 +383,13 @@ class CardBackgroundPicker extends StatelessWidget {
   Widget _buildImagePicker(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final path = customImagePath;
-    if (path != null &&
-        path.isNotEmpty &&
-        imagePreviewBuilder != null &&
-        onImagePlacementChanged != null) {
+    if (path != null && path.isNotEmpty && onImagePlacementChanged != null) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           CardImageAlignmentEditor(
-            path: path,
             placement: imagePlacement,
             onChanged: onImagePlacementChanged!,
-            previewBuilder: imagePreviewBuilder!,
           ),
           Wrap(
             spacing: 12,

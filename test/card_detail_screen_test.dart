@@ -3,20 +3,25 @@ import 'package:cards_wallet/providers/theme_provider.dart';
 import 'package:cards_wallet/screens/card_detail_screen.dart';
 import 'package:cards_wallet/screens/card_edit_screen.dart';
 import 'package:cards_wallet/services/auth_service.dart';
+import 'package:cards_wallet/widgets/wallet_card_face.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _DetailTestCard extends CardData {
-  _DetailTestCard()
+  final bool hasAdditionalInfo;
+
+  _DetailTestCard({this.hasAdditionalInfo = false})
     : super(
         encryptedCardNumber: 'unused',
         encryptedExpiryDate: 'unused',
         lastFourDigits: '1111',
         cardType: 'Visa',
         cardNickname: 'Everyday',
+        notes: hasAdditionalInfo ? 'First line\nSecond line' : null,
       );
 
   @override
@@ -32,16 +37,19 @@ class _DetailTestCard extends CardData {
   Future<String?> getDecryptedCvv() async => '123';
 
   @override
-  Future<String?> getDecryptedAccountNumber() async => null;
+  Future<String?> getDecryptedAccountNumber() async =>
+      hasAdditionalInfo ? '001234567890' : null;
 
   @override
-  Future<String?> getDecryptedIfscCode() async => null;
+  Future<String?> getDecryptedIfscCode() async =>
+      hasAdditionalInfo ? 'HDFC0001234' : null;
 
   @override
-  Future<String?> getDecryptedUpiId() async => null;
+  Future<String?> getDecryptedUpiId() async =>
+      hasAdditionalInfo ? 'test@bank' : null;
 }
 
-Widget _testApp() {
+Widget _testApp({bool hasAdditionalInfo = false}) {
   return MultiProvider(
     providers: [
       Provider<AuthenticationCoordinator>.value(
@@ -58,8 +66,12 @@ Widget _testApp() {
               child: FilledButton(
                 onPressed: () => Navigator.of(context).push<void>(
                   MaterialPageRoute<void>(
-                    builder: (_) =>
-                        CardDetailScreen(card: _DetailTestCard(), cardIndex: 0),
+                    builder: (_) => CardDetailScreen(
+                      card: _DetailTestCard(
+                        hasAdditionalInfo: hasAdditionalInfo,
+                      ),
+                      cardIndex: 0,
+                    ),
                   ),
                 ),
                 child: const Text('Open card'),
@@ -122,6 +134,58 @@ void main() {
     );
   });
 
+  testWidgets('additional information copies each complete saved value', (
+    tester,
+  ) async {
+    final copied = <String>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    await tester.pumpWidget(_testApp(hasAdditionalInfo: true));
+    await tester.tap(find.text('Open card'));
+    await tester.pumpAndSettle();
+    for (final entry in {
+      'Account Number': '001234567890',
+      'IFSC Code': 'HDFC0001234',
+      'UPI ID': 'test@bank',
+      'Notes': 'First line\nSecond line',
+    }.entries) {
+      final copy = find.byTooltip('Copy ${entry.key}');
+      await tester.ensureVisible(copy);
+      await tester.pumpAndSettle();
+      await tester.tap(copy);
+      await tester.pumpAndSettle();
+      expect(copied.last, entry.value);
+      expect(find.text('${entry.key} copied'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+    }
+    expect(copied, hasLength(4));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('empty additional fields keep visible disabled copy buttons', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_testApp());
+    await tester.tap(find.text('Open card'));
+    await tester.pumpAndSettle();
+    for (final label in ['Account Number', 'IFSC Code', 'UPI ID', 'Notes']) {
+      final copy = find.byTooltip('Copy $label');
+      expect(copy, findsOneWidget);
+      final button = find.ancestor(of: copy, matching: find.byType(IconButton));
+      expect(tester.widget<IconButton>(button).onPressed, isNull);
+    }
+  });
+
   testWidgets('dragging the displayed card down closes its detail route', (
     tester,
   ) async {
@@ -156,6 +220,13 @@ void main() {
     expect(find.byType(CardEditScreen), findsOneWidget);
     final section = find.text('Additional Information');
     expect(section, findsOneWidget);
-    expect(tester.getTopLeft(section).dy, lessThan(220));
+    final preview = find.descendant(
+      of: find.byType(CardEditScreen),
+      matching: find.byType(WalletCardFace),
+    );
+    final previewBottom = tester.getBottomLeft(preview).dy;
+    expect(section.hitTestable(), findsOneWidget);
+    expect(tester.getTopLeft(section).dy, greaterThan(previewBottom));
+    expect(tester.getTopLeft(section).dy, lessThan(previewBottom + 100));
   });
 }

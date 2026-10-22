@@ -13,6 +13,102 @@ class AppRelease {
 
   static const history = [
     AppRelease(
+      version: '1.8.17',
+      buildNumber: 36,
+      date: '22 October 2026',
+      changes: [
+        'Homepage carousel cards now show the contactless symbol in the same position as the card preview, respecting the Show on card setting.',
+      ],
+    ),
+    AppRelease(
+      version: '1.8.16',
+      buildNumber: 35,
+      date: '22 October 2026',
+      changes: [
+        'Custom-image alignment now uses the main card preview for dragging, pinching, zooming, and reset, without a duplicate preview in the image selection section.',
+      ],
+    ),
+    AppRelease(
+      version: '1.8.15',
+      buildNumber: 34,
+      date: '22 October 2026',
+      changes: [
+        'Moved the vertical Credit Card and Debit Card labels to the left edge of homepage carousel cards to match the card details preview.',
+      ],
+    ),
+    AppRelease(
+      version: '1.8.14',
+      buildNumber: 33,
+      date: '22 October 2026',
+      changes: [
+        'Additional Information always shows copy buttons, with empty fields disabled until a value is saved.',
+      ],
+    ),
+    AppRelease(
+      version: '1.8.13',
+      buildNumber: 32,
+      date: '22 October 2026',
+      changes: [
+        'Copy saved notes from Additional Information, with consistent labeled copy buttons for account numbers, IFSC codes, UPI IDs, and notes.',
+      ],
+    ),
+    AppRelease(
+      version: '1.8.12',
+      buildNumber: 31,
+      date: '22 October 2026',
+      changes: [
+        'Card background reveals now finish in 400 milliseconds, and timing adjustments apply to previews that are already open.',
+      ],
+    ),
+    AppRelease(
+      version: '1.8.11',
+      buildNumber: 30,
+      date: '22 October 2026',
+      changes: [
+        'Sped up the entire card background reveal while preserving its smooth motion.',
+      ],
+    ),
+    AppRelease(
+      version: '1.8.10',
+      buildNumber: 29,
+      date: '22 October 2026',
+      changes: [
+        'Card background reveals start a little faster while keeping their smooth finish.',
+      ],
+    ),
+    AppRelease(
+      version: '1.8.9',
+      buildNumber: 28,
+      date: '22 October 2026',
+      changes: [
+        'Smoothed card background reveals with gentler timing, images loaded before the animation, and uninterrupted transitions when selecting designs quickly.',
+      ],
+    ),
+    AppRelease(
+      version: '1.8.8',
+      buildNumber: 27,
+      date: '22 October 2026',
+      changes: [
+        'Selected card designs and background images reveal with an expanding circle from a random point on the add and edit previews.',
+      ],
+    ),
+    AppRelease(
+      version: '1.8.7',
+      buildNumber: 26,
+      date: '22 October 2026',
+      changes: [
+        'Reduced the gap below the sticky card preview on add and edit pages for a more compact scrolling layout.',
+      ],
+    ),
+    AppRelease(
+      version: '1.8.6',
+      buildNumber: 25,
+      date: '22 October 2026',
+      changes: [
+        'The card preview stays visible while scrolling on add and edit pages, with a subtle lift animation and live design updates.',
+      ],
+    ),
+    AppRelease(
       version: '1.8.5',
       buildNumber: 24,
       date: '10 October 2026',

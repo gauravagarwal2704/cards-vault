@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter, TileMode;
 
@@ -6,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../data/card_designs.dart';
 import '../models/card_image_placement.dart';
 import 'card_custom_image.dart';
+import 'card_background_reveal.dart';
 import '../utils/card_contrast.dart';
 import '../utils/image_utils.dart';
 
@@ -13,6 +15,7 @@ import '../utils/image_utils.dart';
 /// Using one surface keeps the add/edit previews and saved wallet cards in sync.
 class CardBackgroundSurface extends StatelessWidget {
   final CardDesign? design;
+  final Object? revealKey;
   final int? customGradientStartColor;
   final int? customGradientEndColor;
   final double customGradientAngle;
@@ -28,6 +31,7 @@ class CardBackgroundSurface extends StatelessWidget {
   const CardBackgroundSurface({
     super.key,
     this.design,
+    this.revealKey,
     this.customGradientStartColor,
     this.customGradientEndColor,
     this.customGradientAngle = 135,
@@ -107,54 +111,38 @@ class CardBackgroundSurface extends StatelessWidget {
             return Stack(
               fit: StackFit.expand,
               children: [
-                if (hasImage)
-                  const ColoredBox(color: Color(0xFF111318))
+                if (revealKey != null)
+                  CardBackgroundReveal(
+                    backgroundKey: revealKey!,
+                    imageProvider: !hasImage && design == null
+                        ? null
+                        : ResizeImage.resizeIfNeeded(
+                            cacheWidth,
+                            null,
+                            hasImage
+                                ? FileImage(File(imagePath))
+                                : AssetImage(design!.assetPath),
+                          ),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: _backgroundLayers(
+                        hasImage,
+                        colors,
+                        cacheWidth,
+                        imagePath,
+                        scrimOpacity,
+                        scrimColor,
+                      ),
+                    ),
+                  )
                 else
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: colors,
-                        transform: GradientRotation(
-                          customGradientAngle * math.pi / 180,
-                        ),
-                      ),
-                    ),
-                  ),
-                if (design != null && !hasImage)
-                  _buildImageLayer(
-                    Image.asset(
-                      design!.assetPath,
-                      fit: BoxFit.cover,
-                      alignment: Alignment.center,
-                      filterQuality: FilterQuality.high,
-                      cacheWidth: cacheWidth,
-                    ),
-                    blur: design!.style == CardDesignStyle.image,
-                  ),
-                if (hasImage)
-                  _buildImageLayer(
-                    CardCustomImage(
-                      path: imagePath,
-                      placement: backgroundImagePlacement,
-                      cacheWidth: cacheWidth,
-                    ),
-                    blur: true,
-                  ),
-                if (scrimOpacity > 0)
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          scrimColor.withValues(alpha: scrimOpacity * 0.82),
-                          scrimColor.withValues(alpha: scrimOpacity * 0.18),
-                          scrimColor.withValues(alpha: scrimOpacity),
-                        ],
-                      ),
-                    ),
+                  ..._backgroundLayers(
+                    hasImage,
+                    colors,
+                    cacheWidth,
+                    imagePath,
+                    scrimOpacity,
+                    scrimColor,
                   ),
                 child,
               ],
@@ -164,6 +152,63 @@ class CardBackgroundSurface extends StatelessWidget {
       ),
     );
   }
+
+  List<Widget> _backgroundLayers(
+    bool hasImage,
+    List<Color> colors,
+    int? cacheWidth,
+    String? imagePath,
+    double scrimOpacity,
+    Color scrimColor,
+  ) => [
+    if (hasImage)
+      const ColoredBox(color: Color(0xFF111318))
+    else
+      DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: colors,
+            transform: GradientRotation(customGradientAngle * math.pi / 180),
+          ),
+        ),
+      ),
+    if (design != null && !hasImage)
+      _buildImageLayer(
+        Image.asset(
+          design!.assetPath,
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+          filterQuality: FilterQuality.high,
+          cacheWidth: cacheWidth,
+        ),
+        blur: design!.style == CardDesignStyle.image,
+      ),
+    if (hasImage)
+      _buildImageLayer(
+        CardCustomImage(
+          path: imagePath!,
+          placement: backgroundImagePlacement,
+          cacheWidth: cacheWidth,
+        ),
+        blur: true,
+      ),
+    if (scrimOpacity > 0)
+      DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              scrimColor.withValues(alpha: scrimOpacity * 0.82),
+              scrimColor.withValues(alpha: scrimOpacity * 0.18),
+              scrimColor.withValues(alpha: scrimOpacity),
+            ],
+          ),
+        ),
+      ),
+  ];
 
   Widget _buildImageLayer(Widget image, {required bool blur}) {
     final sigma = backgroundImageBlur.clamp(0.0, 12.0);

@@ -741,10 +741,11 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
                 allowCopy: upiId != null && upiId.isNotEmpty,
               ),
               const Divider(height: 24),
-              _buildInfoRow(
+              _buildInfoRowWithCopy(
                 Icons.note,
                 'Notes',
                 (notes == null || notes.isEmpty) ? 'Not set' : notes,
+                allowCopy: notes != null && notes.isNotEmpty,
               ),
             ]),
             if (hasPhotos)
@@ -825,15 +826,11 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
             ],
           ),
         ),
-        if (allowCopy)
-          IconButton(
-            icon: Icon(
-              Icons.copy,
-              color: themeProvider.getSecondaryTextColor(),
-              size: 20,
-            ),
-            onPressed: () => _copyToClipboard(value, label),
-          ),
+        _buildCompactIconButton(
+          icon: Icons.copy,
+          tooltip: 'Copy $label',
+          onPressed: allowCopy ? () => _copyToClipboard(value, label) : null,
+        ),
       ],
     );
   }
@@ -934,60 +931,19 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
   Widget _buildCompactIconButton({
     required IconData icon,
     required String tooltip,
-    required VoidCallback onPressed,
+    required VoidCallback? onPressed,
   }) {
     final themeProvider = context.watch<ThemeProvider>();
 
     return IconButton(
-      icon: Icon(icon, color: themeProvider.getSecondaryTextColor(), size: 18),
+      icon: Icon(icon, size: 18),
+      color: themeProvider.getSecondaryTextColor(),
+      disabledColor: Theme.of(context).disabledColor,
       tooltip: tooltip,
       onPressed: onPressed,
       padding: const EdgeInsets.all(4),
       visualDensity: VisualDensity.compact,
       constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-    );
-  }
-
-  Widget _buildInfoRow(IconData icon, String label, String value) {
-    final themeProvider = context.watch<ThemeProvider>();
-    final scheme = Theme.of(context).colorScheme;
-
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(
-            icon,
-            size: 20,
-            color: themeProvider.getSecondaryTextColor(),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: AppTypography.caption(
-                  color: themeProvider.getSecondaryTextColor(),
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                value,
-                style: AppTypography.title(
-                  color: themeProvider.getPrimaryTextColor(),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }

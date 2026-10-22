@@ -20,11 +20,13 @@ import '../services/app_log_service.dart';
 import '../widgets/bank_logo.dart';
 import '../widgets/card_attachments.dart';
 import '../widgets/card_background_picker.dart';
+import '../widgets/card_image_alignment_editor.dart';
 import '../widgets/card_background_preview_swiper.dart';
 import '../widgets/card_background_surface.dart';
 import '../widgets/card_network_logo.dart';
 import '../widgets/group_picker_sheet.dart';
 import '../widgets/wallet_card.dart';
+import '../widgets/sticky_card_editor.dart';
 import '../widgets/wallet_card_face.dart';
 import '../utils/card_formatter.dart';
 import '../utils/card_contrast.dart';
@@ -516,14 +518,11 @@ class _CardEditScreenState extends State<CardEditScreen> {
           builder: (context, constraints) {
             final wide = constraints.maxWidth >= 900;
             if (!wide) {
-              return SingleChildScrollView(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 680),
-                    child: _buildEditorFields(includePreview: true),
-                  ),
-                ),
+              return StickyCardEditor(
+                backgroundColor: themeProvider.getBackgroundColor(),
+                preview: _buildPreviewCard(),
+                banner: widget.ocrResult != null ? _buildInfoBanner() : null,
+                fields: _buildEditorFields(),
               );
             }
 
@@ -561,7 +560,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
                     padding: const EdgeInsets.all(AppSpacing.xl),
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 680),
-                      child: _buildEditorFields(includePreview: false),
+                      child: _buildEditorFields(),
                     ),
                   ),
                 ),
@@ -573,18 +572,10 @@ class _CardEditScreenState extends State<CardEditScreen> {
     );
   }
 
-  Widget _buildEditorFields({required bool includePreview}) {
+  Widget _buildEditorFields() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (includePreview && widget.ocrResult != null) ...[
-          _buildInfoBanner(),
-          const SizedBox(height: AppSpacing.md),
-        ],
-        if (includePreview) ...[
-          _buildPreviewCard(),
-          const SizedBox(height: AppSpacing.xl),
-        ],
         _buildSectionTitle('Card Information'),
         const SizedBox(height: AppSpacing.sm),
         _buildCardNumberField(),
@@ -659,7 +650,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
     );
   }
 
-  Widget _buildPreviewCard({CardImagePlacement? imagePlacement}) {
+  Widget _buildPreviewCard() {
     final themeProvider = context.watch<ThemeProvider>();
     final primaryColor =
         _selectedDesign?.primaryColor ??
@@ -684,14 +675,15 @@ class _CardEditScreenState extends State<CardEditScreen> {
         ? _customGradientStart
         : primaryColor;
 
-    return CardBackgroundPreviewSwiper(
+    final preview = CardBackgroundPreviewSwiper(
       enabled: _backgroundMode == CardBackgroundMode.catalog,
-      backgroundKey:
-          '${_backgroundMode.name}:${_selectedDesign?.id ?? 'default'}',
       onCycle: _cyclePreviewBackground,
       child: AspectRatio(
         aspectRatio: 1.586,
         child: CardBackgroundSurface(
+          revealKey:
+              '${_backgroundMode.name}:${_selectedDesign?.id ?? 'default'}:'
+              '${_backgroundMode == CardBackgroundMode.customImage ? _customBackgroundImagePath : ''}',
           design: _backgroundMode == CardBackgroundMode.catalog
               ? _selectedDesign
               : null,
@@ -709,7 +701,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
               ? _customBackgroundImagePath
               : null,
           backgroundImageBlur: _effectiveBackgroundImageBlur,
-          backgroundImagePlacement: imagePlacement ?? _backgroundImagePlacement,
+          backgroundImagePlacement: _backgroundImagePlacement,
           fallbackPrimaryColor: primaryColor,
           fallbackSecondaryColor: secondaryColor,
           borderRadius: BorderRadius.circular(20),
@@ -738,6 +730,17 @@ class _CardEditScreenState extends State<CardEditScreen> {
         ),
       ),
     );
+    if (_backgroundMode == CardBackgroundMode.customImage &&
+        _customBackgroundImagePath?.isNotEmpty == true) {
+      return CardImageAlignmentPreview(
+        path: _customBackgroundImagePath!,
+        placement: _backgroundImagePlacement,
+        onChanged: (placement) =>
+            setState(() => _backgroundImagePlacement = placement),
+        child: preview,
+      );
+    }
+    return preview;
   }
 
   void _cyclePreviewBackground(int direction) {
@@ -1073,8 +1076,6 @@ class _CardEditScreenState extends State<CardEditScreen> {
           setState(() => _overlayVisibility = visibility),
       onImagePlacementChanged: (placement) =>
           setState(() => _backgroundImagePlacement = placement),
-      imagePreviewBuilder: (placement) =>
-          _buildPreviewCard(imagePlacement: placement),
       onModeChanged: (mode) => setState(() => _backgroundMode = mode),
       onStyleChanged: (style) {
         setState(() {

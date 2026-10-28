@@ -108,31 +108,42 @@ void main() {
                   builder: (context, setState) {
                     return RepaintBoundary(
                       key: boundaryKey,
-                      child: CardImageAlignmentEditor(
-                        path: file.path,
-                        placement: placement,
-                        onChanged: (next) => setState(() => placement = next),
-                        previewBuilder: (value) => AspectRatio(
-                          aspectRatio: 1.586,
-                          child: CardBackgroundSurface(
-                            customBackgroundImagePath: file.path,
-                            backgroundImagePlacement: value,
-                            fallbackPrimaryColor: Colors.green,
-                            fallbackSecondaryColor: Colors.blue,
-                            borderRadius: BorderRadius.circular(20),
-                            child: const WalletCardFace(
-                              bank: null,
-                              network: CardNetwork.visa,
-                              categoryName: 'Credit',
-                              nickname: 'My card',
-                              cardNumber: '4111 1111 1111 1111',
-                              cardholderName: 'Test User',
-                              expiryDate: '12/30',
-                              backgroundColor: Colors.green,
-                              foregroundColor: Colors.white,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CardImageAlignmentPreview(
+                            path: file.path,
+                            placement: placement,
+                            onChanged: (next) =>
+                                setState(() => placement = next),
+                            child: AspectRatio(
+                              aspectRatio: 1.586,
+                              child: CardBackgroundSurface(
+                                customBackgroundImagePath: file.path,
+                                backgroundImagePlacement: placement,
+                                fallbackPrimaryColor: Colors.green,
+                                fallbackSecondaryColor: Colors.blue,
+                                borderRadius: BorderRadius.circular(20),
+                                child: const WalletCardFace(
+                                  bank: null,
+                                  network: CardNetwork.visa,
+                                  categoryName: 'Credit',
+                                  nickname: 'My card',
+                                  cardNumber: '4111 1111 1111 1111',
+                                  cardholderName: 'Test User',
+                                  expiryDate: '12/30',
+                                  backgroundColor: Colors.green,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                          CardImageAlignmentEditor(
+                            placement: placement,
+                            onChanged: (next) =>
+                                setState(() => placement = next),
+                          ),
+                        ],
                       ),
                     );
                   },

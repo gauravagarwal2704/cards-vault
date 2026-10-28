@@ -79,7 +79,6 @@ void main() {
               height: 220,
               child: CardBackgroundPreviewSwiper(
                 enabled: true,
-                backgroundKey: 'preview',
                 onCycle: directions.add,
                 child: const ColoredBox(color: Colors.blue),
               ),

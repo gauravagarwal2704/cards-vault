@@ -7,14 +7,12 @@ import 'package:flutter/material.dart';
 /// this gesture stays synchronized with the background picker.
 class CardBackgroundPreviewSwiper extends StatefulWidget {
   final bool enabled;
-  final Object backgroundKey;
   final ValueChanged<int> onCycle;
   final Widget child;
 
   const CardBackgroundPreviewSwiper({
     super.key,
     required this.enabled,
-    required this.backgroundKey,
     required this.onCycle,
     required this.child,
   });
@@ -54,16 +52,6 @@ class _CardBackgroundPreviewSwiperState
 
   @override
   Widget build(BuildContext context) {
-    final preview = AnimatedSwitcher(
-      duration: const Duration(milliseconds: 180),
-      switchInCurve: Curves.easeOut,
-      switchOutCurve: Curves.easeIn,
-      child: KeyedSubtree(
-        key: ValueKey(widget.backgroundKey),
-        child: widget.child,
-      ),
-    );
-
     return Semantics(
       label: 'Card background preview',
       hint: widget.enabled
@@ -76,7 +64,7 @@ class _CardBackgroundPreviewSwiperState
         onHorizontalDragUpdate: widget.enabled ? _onHorizontalDragUpdate : null,
         onHorizontalDragEnd: widget.enabled ? _onHorizontalDragEnd : null,
         onHorizontalDragCancel: widget.enabled ? _onHorizontalDragCancel : null,
-        child: preview,
+        child: widget.child,
       ),
     );
   }

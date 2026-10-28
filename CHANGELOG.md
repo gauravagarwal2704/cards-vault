@@ -1,5 +1,76 @@
 # Changelog
 
+## [1.8.19+38] - 2026-10-28
+
+### Fixed
+- Cards appear sooner when opening your wallet, with fewer secure-storage calls and search and filter details loaded in the background.
+
+## [1.8.18+37] - 2026-10-22
+
+### Changed
+- Prepared a fresh Google Play closed-testing build with the latest CardVault improvements. App features are unchanged from the previous version.
+
+## [1.8.17+36] - 2026-10-22
+
+### Changed
+- Homepage carousel cards now show the contactless symbol in the same position as the card preview, respecting the Show on card setting.
+
+## [1.8.16+35] - 2026-10-22
+
+### Changed
+- Custom-image alignment now uses the main card preview for dragging, pinching, zooming, and reset, without a duplicate preview in the image selection section.
+
+## [1.8.15+34] - 2026-10-22
+
+### Changed
+- Moved the vertical Credit Card and Debit Card labels to the left edge of homepage carousel cards to match the card details preview.
+
+## [1.8.14+33] - 2026-10-22
+
+### Changed
+- Additional Information always shows copy buttons, with empty fields disabled until a value is saved.
+
+## [1.8.13+32] - 2026-10-22
+
+### Changed
+- Copy saved notes from Additional Information, with consistent labeled copy buttons for account numbers, IFSC codes, UPI IDs, and notes.
+
+## [1.8.12+31] - 2026-10-22
+
+### Changed
+- Card background reveals now finish in 400 milliseconds, and timing adjustments apply to previews that are already open.
+
+## [1.8.11+30] - 2026-10-22
+
+### Changed
+- Sped up the entire card background reveal while preserving its smooth motion.
+
+## [1.8.10+29] - 2026-10-22
+
+### Changed
+- Card background reveals start a little faster while keeping their smooth finish.
+
+## [1.8.9+28] - 2026-10-22
+
+### Changed
+- Smoothed card background reveals with gentler timing, images loaded before the animation, and uninterrupted transitions when selecting designs quickly.
+
+## [1.8.8+27] - 2026-10-22
+
+### Changed
+- Selected card designs and background images reveal with an expanding circle from a random point on the add and edit previews.
+- Reveal animations respect the device setting to reduce motion.
+
+## [1.8.7+26] - 2026-10-22
+
+### Changed
+- Reduced the gap below the sticky card preview on add and edit pages for a more compact scrolling layout.
+
+## [1.8.6+25] - 2026-10-22
+
+### Changed
+- The card preview stays visible while scrolling on add and edit pages, with a subtle lift animation and live design updates.
+
 ## [1.8.5+24] - 2026-10-10
 
 ### Changed

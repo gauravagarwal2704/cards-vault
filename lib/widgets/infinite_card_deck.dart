@@ -690,6 +690,21 @@ class _WalletCardCompact extends StatelessWidget {
           children: [
             if (showCircles) _buildDecoCircles(),
             _buildContent(),
+            if (cardData.effectiveOverlayVisibility.shows(
+              CardOverlay.contactless,
+            ))
+              Positioned(
+                right: 18,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: Icon(
+                    Icons.contactless,
+                    color: _textColorSecondary,
+                    size: 28,
+                  ),
+                ),
+              ),
             if (bank != null &&
                 cardData.effectiveOverlayVisibility.shows(CardOverlay.bankLogo))
               _buildBankLogo(),
@@ -768,7 +783,7 @@ class _WalletCardCompact extends StatelessWidget {
 
   Widget _buildContent() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 38, 16),
+      padding: const EdgeInsets.fromLTRB(28, 16, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.end,
@@ -860,19 +875,16 @@ class _WalletCardCompact extends StatelessWidget {
         : 'DEBIT CARD';
 
     return Positioned(
-      right: -12,
-      top: 0,
-      bottom: 0,
-      child: Center(
-        child: Transform.rotate(
-          angle: 1.5708,
-          child: Text(
-            categoryText,
-            style: AppTypography.overline(
-              fontSize: 8,
-              color: _textColorSecondary.withValues(alpha: 0.6),
-            ).copyWith(fontWeight: FontWeight.w600, letterSpacing: 1.5),
-          ),
+      left: 4,
+      bottom: 16,
+      child: RotatedBox(
+        quarterTurns: 3,
+        child: Text(
+          categoryText,
+          style: AppTypography.overline(
+            fontSize: 8,
+            color: _textColorSecondary.withValues(alpha: 0.6),
+          ).copyWith(fontWeight: FontWeight.w600, letterSpacing: 1.5),
         ),
       ),
     );

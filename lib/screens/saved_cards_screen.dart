@@ -389,24 +389,43 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
   Future<void> _loadCards() async {
     if (!mounted) return;
     final generation = ++_loadGeneration;
+    final span = AppLogService.instance.startSpan('Cards', 'Show wallet cards');
     setState(() => _isLoading = true);
 
     try {
       final cards =
           await (widget.cardLoader?.call() ?? _cardStorage.loadCards());
-      final groups =
-          await (widget.groupLoader?.call() ?? _groupStorage.loadGroups());
+      if (!mounted || generation != _loadGeneration) {
+        span.complete(details: {'superseded': true});
+        return;
+      }
+      setState(() {
+        _cards = cards;
+        _allCardholderNames = {};
+        _cardIdToCardholderName = {};
+        _selectedCardIds.removeWhere(
+          (id) => !cards.any((card) => card.id == id),
+        );
+        _isLoading = false;
+      });
+      span.complete(details: {'cardCount': cards.length});
+
+      // Card faces can render from the stored snapshot while the independent
+      // group lookup and cardholder search/filter index finish in parallel.
       var unreadableNameCount = 0;
-      final names = await Future.wait(
-        cards.map((card) async {
-          try {
-            return await card.getDecryptedCardholderName();
-          } catch (_) {
-            unreadableNameCount++;
-            return null;
-          }
-        }),
-      );
+      final (groups, names) = await (
+        widget.groupLoader?.call() ?? _groupStorage.loadGroups(),
+        Future.wait(
+          cards.map((card) async {
+            try {
+              return await card.getDecryptedCardholderName();
+            } catch (_) {
+              unreadableNameCount++;
+              return null;
+            }
+          }),
+        ),
+      ).wait;
 
       final cardIdToName = <String, String>{};
       for (int i = 0; i < cards.length; i++) {
@@ -462,7 +481,8 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
           ),
         );
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      span.fail(e, stackTrace);
       AppLogService.instance.record('Cards', 'Wallet load failed: $e');
       if (!mounted || generation != _loadGeneration) return;
       setState(() => _isLoading = false);

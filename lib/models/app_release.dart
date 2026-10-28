@@ -13,6 +13,14 @@ class AppRelease {
 
   static const history = [
     AppRelease(
+      version: '1.8.19',
+      buildNumber: 38,
+      date: '28 October 2026',
+      changes: [
+        'Cards appear sooner when opening your wallet, with fewer secure-storage calls and search and filter details loaded in the background.',
+      ],
+    ),
+    AppRelease(
       version: '1.8.18',
       buildNumber: 37,
       date: '22 October 2026',

@@ -176,6 +176,10 @@ class SecureCardStorage {
 
   Future<List<String>> _getCardIdsList() async {
     final String? cardsListJson = await _secureStorage.read(key: _cardsListKey);
+    return _decodeCardIdsList(cardsListJson);
+  }
+
+  List<String> _decodeCardIdsList(String? cardsListJson) {
     if (cardsListJson == null) {
       return [];
     }
@@ -195,16 +199,17 @@ class SecureCardStorage {
     final span = AppLogService.instance.startSpan('Storage', 'Load wallet');
     return _serialized(() async {
       try {
-        final List<String> cardIds = await _getCardIdsList();
+        // One platform call gives us the index and records together. Reading
+        // each card separately adds a native round trip per card at startup.
+        // Keep this snapshot on the mutation queue to avoid half-written saves.
+        final snapshot = await _secureStorage.readAll();
+        final cardIds = _decodeCardIdsList(snapshot[_cardsListKey]);
         final List<CardData> cards = [];
 
         for (final cardId in cardIds) {
-          // Keep the platform read outside the parse recovery below. A secure
-          // storage failure is not evidence that the card was deleted, and
-          // returning a partial list would incorrectly replace the UI wallet.
-          final String? cardJson = await _secureStorage.read(
-            key: '$_cardPrefix$cardId',
-          );
+          // Missing indexed records must still fail the whole load; never
+          // replace the UI wallet with a partial snapshot.
+          final cardJson = snapshot['$_cardPrefix$cardId'];
           if (cardJson == null) {
             throw StateError('Saved card $cardId is temporarily unavailable');
           }

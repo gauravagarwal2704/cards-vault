@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.8.19+38] - 2026-10-28
+
+### Fixed
+- Cards appear sooner when opening your wallet, with fewer secure-storage calls and search and filter details loaded in the background.
+
 ## [1.8.18+37] - 2026-10-22
 
 ### Changed

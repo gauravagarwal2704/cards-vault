@@ -59,6 +59,8 @@ class _ControlledSecureStoragePlatform
   int activeOperations = 0;
   int maxActiveOperations = 0;
   final Map<String, int> writeCounts = {};
+  int readCalls = 0;
+  int readAllCalls = 0;
 
   Future<T> _track<T>(FutureOr<T> Function() operation) async {
     activeOperations++;
@@ -80,11 +82,23 @@ class _ControlledSecureStoragePlatform
     required String key,
     required Map<String, String> options,
   }) {
+    readCalls++;
     return _track(() {
       if (key == failingReadKey) {
         throw PlatformException(code: 'keystore-unavailable');
       }
       return data[key];
+    });
+  }
+
+  @override
+  Future<Map<String, String>> readAll({required Map<String, String> options}) {
+    readAllCalls++;
+    return _track(() {
+      if (failingReadKey != null) {
+        throw PlatformException(code: 'keystore-unavailable');
+      }
+      return Map<String, String>.from(data);
     });
   }
 
@@ -185,6 +199,53 @@ void main() {
       );
     },
   );
+
+  test(
+    'ten cards load in one native call and preserve newest-first order',
+    () async {
+      final cards = List.generate(
+        10,
+        (i) =>
+            _card('card-$i').copyWith(savedDate: DateTime.utc(2026, 1, i + 1)),
+      );
+      final platform = _ControlledSecureStoragePlatform({
+        ..._storedCards(cards),
+        'card_orphan': jsonEncode(_card('orphan').toJson()),
+        'encryption_master_key': 'unrelated-key',
+      });
+      FlutterSecureStoragePlatform.instance = platform;
+
+      final loaded = await SecureCardStorage().loadCards();
+
+      expect(
+        loaded.map((card) => card.id),
+        cards.reversed.map((card) => card.id),
+      );
+      expect(platform.readAllCalls, 1);
+      expect(platform.readCalls, 0);
+    },
+  );
+
+  test('a missing indexed record fails the entire snapshot', () async {
+    final data = _storedCards([_card('first'), _card('second')])
+      ..remove('card_second');
+    FlutterSecureStoragePlatform.instance = _ControlledSecureStoragePlatform(
+      data,
+    );
+    await expectLater(
+      SecureCardStorage().loadCards(),
+      throwsA(isA<Exception>()),
+    );
+  });
+
+  test('a malformed record is isolated without losing healthy cards', () async {
+    final data = _storedCards([_card('first'), _card('second')])
+      ..['card_second'] = '{invalid';
+    FlutterSecureStoragePlatform.instance = _ControlledSecureStoragePlatform(
+      data,
+    );
+    expect((await SecureCardStorage().loadCards()).single.id, 'first');
+  });
 
   test(
     'image alignment survives encrypted backup export and restore',

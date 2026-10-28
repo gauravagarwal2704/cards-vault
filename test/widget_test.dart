@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cards_wallet/main.dart';
 import 'package:cards_wallet/models/card_data.dart';
 import 'package:cards_wallet/models/app_release.dart';
@@ -77,7 +79,26 @@ class _UnreadableNameCard extends CardData {
   }
 }
 
-Widget _home({required Future<List<CardData>> Function() cardLoader}) {
+class _PendingNameCard extends CardData {
+  _PendingNameCard(this.name)
+    : super(
+        encryptedCardNumber: 'encrypted',
+        encryptedExpiryDate: 'encrypted',
+        lastFourDigits: '4242',
+        cardType: 'visa',
+        id: 'pending-name',
+      );
+
+  final Future<String?> name;
+
+  @override
+  Future<String?> getDecryptedCardholderName() => name;
+}
+
+Widget _home({
+  required Future<List<CardData>> Function() cardLoader,
+  Future<List<CardGroup>> Function()? groupLoader,
+}) {
   return MultiProvider(
     providers: [
       ChangeNotifierProvider(create: (_) => ThemeProvider()),
@@ -90,7 +111,7 @@ Widget _home({required Future<List<CardData>> Function() cardLoader}) {
     child: MaterialApp(
       home: SavedCardsScreen(
         cardLoader: cardLoader,
-        groupLoader: _loadNoGroups,
+        groupLoader: groupLoader ?? _loadNoGroups,
       ),
     ),
   );
@@ -416,6 +437,34 @@ void main() {
     expect(find.text('2 selected'), findsOneWidget);
   });
 
+  testWidgets(
+    'cards render before groups and cardholder search details finish',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'profile_display_name': 'Avery',
+        'card_view_mode': 'grid',
+      });
+      final groups = Completer<List<CardGroup>>();
+      final name = Completer<String?>();
+      final card = _PendingNameCard(name.future);
+      await tester.pumpWidget(
+        _home(cardLoader: () async => [card], groupLoader: () => groups.future),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('•••• 4242'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      groups.complete([]);
+      await tester.pump();
+      expect(find.text('•••• 4242'), findsOneWidget);
+      name.complete('Avery');
+      await tester.pumpAndSettle();
+      expect(find.text('•••• 4242'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('an unreadable cardholder name does not block saved cards', (
     tester,
   ) async {
@@ -573,7 +622,10 @@ void main() {
     expect(find.byKey(const ValueKey('github-logo')), findsOneWidget);
     expect(find.byKey(const ValueKey('about-links-row')), findsOneWidget);
     expect(find.byKey(const ValueKey('telegram-link')), findsOneWidget);
-    expect(find.byKey(const ValueKey('support-developer-link')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('support-developer-link')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey('support-developer-app-icon')),
       findsOneWidget,

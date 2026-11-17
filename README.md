@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/branding/app_icon_3d.webp" alt="CardVault app icon" width="96" />
+  <img src="docs/assets/app-icon-rose.png" alt="CardVault burgundy app icon" width="96" />
 </p>
 
 <h1 align="center">CardVault</h1>

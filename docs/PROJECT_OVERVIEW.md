@@ -58,10 +58,11 @@ cards-vault/
 │       └── AndroidManifest.xml       # NFC permissions
 ├── pubspec.yaml                       # Dependencies
 ├── README.md                          # Main documentation
-├── QUICK_START.md                     # Quick start guide
-├── TECHNICAL_REFERENCE.md             # Technical details
-├── IMPLEMENTATION_SUMMARY.md          # Implementation checklist
-└── PROJECT_OVERVIEW.md                # This file
+└── docs/                             # Supporting documentation
+    ├── QUICK_START.md                 # Quick start guide
+    ├── TECHNICAL_REFERENCE.md          # Technical details
+    ├── IMPLEMENTATION_SUMMARY.md       # Implementation checklist
+    └── PROJECT_OVERVIEW.md             # This file
 ```
 
 ## 🔧 Technologies Used

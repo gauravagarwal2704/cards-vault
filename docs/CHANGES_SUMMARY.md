@@ -60,8 +60,8 @@ Enhanced detection for:
 1. `/lib/services/nfc_service.dart` - Main NFC service implementation
 
 ## Files Created
-1. `/NFC_TROUBLESHOOTING_GUIDE.md` - Comprehensive troubleshooting guide
-2. `/CHANGES_SUMMARY.md` - This file
+1. `/docs/NFC_TROUBLESHOOTING_GUIDE.md` - Comprehensive troubleshooting guide
+2. `/docs/CHANGES_SUMMARY.md` - This file
 
 ## Testing Recommendations
 

@@ -218,7 +218,7 @@ Before deploying to production:
 
 ### Resources
 
-- 📖 [README.md](README.md) - Full documentation
+- 📖 [README.md](../README.md) - Full documentation
 - 🔧 [TECHNICAL_REFERENCE.md](TECHNICAL_REFERENCE.md) - APDU commands & EMV details
 - 📱 Flutter NFC Kit: https://pub.dev/packages/flutter_nfc_kit
 - 💳 EMV Specifications: https://www.emvco.com/

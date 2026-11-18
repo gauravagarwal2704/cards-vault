@@ -13,6 +13,88 @@ class AppRelease {
 
   static const history = [
     AppRelease(
+      version: '1.14.0',
+      buildNumber: 47,
+      date: '28 October 2026',
+      changes: [
+        'Added a compact 2×2 Android card widget with four smaller cards in a square layout.',
+        'The compact widget adapts to other shapes when resized and keeps its own card selection.',
+      ],
+    ),
+    AppRelease(
+      version: '1.13.0',
+      buildNumber: 46,
+      date: '28 October 2026',
+      changes: [
+        'Android now offers separate grid and vertical card widgets, each with its own card selection.',
+        'The grid widget starts square, while the tall widget stacks equal-sized cards in one column.',
+      ],
+    ),
+    AppRelease(
+      version: '1.12.3',
+      buildNumber: 45,
+      date: '28 October 2026',
+      changes: [
+        'Tall Android widgets now arrange selected cards in a vertical list when a grid would leave a large empty area below.',
+      ],
+    ),
+    AppRelease(
+      version: '1.12.2',
+      buildNumber: 44,
+      date: '28 October 2026',
+      changes: [
+        'Android widgets now show “Card Vault” with your selected app icon in the header.',
+      ],
+    ),
+    AppRelease(
+      version: '1.12.1',
+      buildNumber: 43,
+      date: '28 October 2026',
+      changes: [
+        'Android widget cards have a little more space between them and the widget edge.',
+        'Resizing keeps cards close to the widget header instead of leaving a large empty band above them.',
+      ],
+    ),
+    AppRelease(
+      version: '1.12.0',
+      buildNumber: 42,
+      date: '28 October 2026',
+      changes: [
+        'Android widget cards now show bank logos when available and card nicknames at the top right.',
+        'Resized widgets fill their bounds, with a little more space between cards.',
+        'Widget customization now saves from the top right and always shows selected card details and backgrounds on the home screen.',
+      ],
+    ),
+    AppRelease(
+      version: '1.11.0',
+      buildNumber: 41,
+      date: '28 October 2026',
+      changes: [
+        'Widget cards now use their saved in-app backgrounds, with closely packed rows and smaller side margins while keeping every selected card visible.',
+        'Widget cards show network logos at the bottom right, with tighter masked-number spacing and no credit/debit labels, chip or contactless symbols.',
+        'Custom image backgrounds can be included through a separate widget setting; these images remain hidden by default.',
+      ],
+    ),
+    AppRelease(
+      version: '1.10.0',
+      buildNumber: 40,
+      date: '28 October 2026',
+      changes: [
+        'Android widget cards now keep their credit-card proportions, with bank-colored gradients and all selected cards staying visible as square, tall and wide widgets are resized.',
+        'Widget previews can show the cardholder name, bank, last four digits, card network and credit/debit type after approving the updated preview setting.',
+      ],
+    ),
+    AppRelease(
+      version: '1.9.0',
+      buildNumber: 39,
+      date: '28 October 2026',
+      changes: [
+        'Added resizable Android home-screen widgets with up to four selected favorite cards and separate settings for each widget.',
+        'Widget taps open the selected card after any required app unlock. Widget previews hide identifying details by default, with optional bank names and last four digits.',
+        'App lock now covers every screen while preserving your place in the app.',
+      ],
+    ),
+    AppRelease(
       version: '1.8.19',
       buildNumber: 38,
       date: '28 October 2026',

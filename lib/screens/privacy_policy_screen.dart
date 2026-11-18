@@ -69,7 +69,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     Text(
-                      'Effective 10 October 2026',
+                      'Effective 28 October 2026',
                       style: AppTypography.caption(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -121,6 +121,24 @@ class PrivacyPolicyScreen extends StatelessWidget {
                           'backup is disabled. Optional app locking uses your '
                           'device authentication; CardVault does not receive or '
                           'store your biometric data.',
+                    ),
+                    const _PolicySection(
+                      title: 'Home-screen widgets',
+                      body:
+                          'Android widgets keep selected card identifiers in private '
+                          'app storage. For selected cards, the cardholder name '
+                          '(or profile name), bank logo or name, nickname, last four '
+                          'digits, network logo and card background are cached and '
+                          'displayed by your home-screen launcher. '
+                          'Widget content is visible outside app lock and may appear '
+                          'in screenshots. Full card numbers, expiry dates, security '
+                          'codes and notes are never copied from your saved fields. '
+                          'Built-in backgrounds and custom gradients match the app. '
+                          'Selected custom image backgrounds also appear outside '
+                          'app lock, including any details within the image. '
+                          'Original image paths and card attachments are not shared. '
+                          'Changing selected cards or removing the widget '
+                          'clears its previous previews.',
                     ),
                     const _PolicySection(
                       title: 'Sharing, backups, and support',

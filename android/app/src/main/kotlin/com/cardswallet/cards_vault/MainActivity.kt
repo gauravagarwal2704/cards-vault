@@ -23,6 +23,27 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
 class MainActivity: FlutterFragmentActivity() {
+    private var widgetChannel: MethodChannel? = null
+
+    private fun widgetLaunch(intent: Intent?): String? {
+        if (intent?.action != Intent.ACTION_VIEW) return null
+        val uri = intent.data ?: return null
+        if (uri.scheme != "cardvault" || uri.query != null || uri.fragment != null ||
+            uri.userInfo != null || uri.port != -1 || uri.pathSegments.size != 1) return null
+        val id = uri.pathSegments.single()
+        return when (uri.host) {
+            "cards" -> if (CardWidgetProvider.validCardId(id)) uri.toString() else null
+            "widgets" -> if (id.toIntOrNull()?.let { it > 0 } == true) uri.toString() else null
+            else -> null
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        widgetLaunch(intent)?.let { widgetChannel?.invokeMethod("launch", null) }
+    }
+
     private val CHANNEL = "cards_wallet/security"
     private val ICON_CHANNEL = "cards_wallet/app_icon"
     private val SUPPORT_CHANNEL = "cards_wallet/support"
@@ -70,6 +91,35 @@ class MainActivity: FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        widgetChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "cards_wallet/home_widgets")
+        widgetChannel?.setMethodCallHandler { call, result ->
+            try {
+                when (call.method) {
+                    "takeLaunch" -> {
+                        val launch = widgetLaunch(intent)
+                        intent?.data = null
+                        result.success(launch)
+                    }
+                    "previewCardIds" -> result.success(CardWidgetProvider.previewCardIds(this))
+                    "hasWidgets" -> result.success(CardWidgetProvider.hasWidgets(this))
+                    "configuration" -> result.success(CardWidgetProvider.configuration(this, (call.arguments as Number).toInt()))
+                    "save" -> {
+                        val id = call.argument<Number>("widgetId")!!.toInt()
+                        CardWidgetProvider.save(this, id, call.argument<List<String>>("ids")!!)
+                        result.success(null)
+                    }
+                    "sync" -> {
+                        @Suppress("UNCHECKED_CAST")
+                        CardWidgetProvider.sync(this, call.arguments as List<Map<*, *>>)
+                        result.success(null)
+                    }
+                    "clearPreviews" -> { CardWidgetProvider.clearPreviews(this); result.success(null) }
+                    else -> result.notImplemented()
+                }
+            } catch (_: Exception) {
+                result.error("widget_unavailable", "Could not update this widget.", null)
+            }
+        }
         appLifecycleHandler?.close()
         appLifecycleHandler = AppLifecycleHandler(application, flutterEngine)
         diagnosticsChannel = MethodChannel(
@@ -139,6 +189,7 @@ class MainActivity: FlutterFragmentActivity() {
                         PackageManager.DONT_KILL_APP
                     )
                 }
+                runCatching { CardWidgetProvider.refreshAll(this) }
                 result.success(true)
                 emitDiagnostic("App icon changed", status = "success")
             } catch (_: NameNotFoundException) {
@@ -240,6 +291,8 @@ class MainActivity: FlutterFragmentActivity() {
         cardScanHandler = null
         cardTextOcrHandler?.close()
         cardTextOcrHandler = null
+        widgetChannel?.setMethodCallHandler(null)
+        widgetChannel = null
         diagnosticsChannel = null
         super.onDestroy()
     }

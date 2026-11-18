@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/app_log_service.dart';
+import '../services/home_widget_service.dart';
 
 /// Stores the small amount of personalisation CardVault needs on the device.
 class ProfileProvider extends ChangeNotifier {
@@ -47,6 +48,7 @@ class ProfileProvider extends ChangeNotifier {
     try {
       final preferences = await SharedPreferences.getInstance();
       await preferences.setString(_displayNameKey, normalized);
+      HomeWidgetService.instance.refresh();
     } catch (error, stackTrace) {
       AppLogService.instance.recordFailure(
         'Save profile preference',

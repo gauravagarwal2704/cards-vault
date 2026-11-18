@@ -1,5 +1,60 @@
 # Changelog
 
+## [1.14.0+47] - 2026-10-28
+
+### Added
+- A compact 2×2 Android widget with four smaller cards in a square layout.
+- The compact widget keeps its own card selection and adapts when resized.
+
+## [1.13.0+46] - 2026-10-28
+
+### Added
+- Separate grid and vertical Android home-screen widgets, each with its own card selection.
+- The grid widget starts square; the vertical widget starts tall with an equal-sized card column.
+
+## [1.12.3+45] - 2026-10-28
+
+### Changed
+- Tall Android widgets arrange cards vertically when a grid would leave a large empty area below.
+
+## [1.12.2+44] - 2026-10-28
+
+### Changed
+- Android widgets show “Card Vault” with the selected app icon in the header.
+
+## [1.12.1+43] - 2026-10-28
+
+### Fixed
+- Android widget cards have slightly more space between them and the widget edge.
+- Resized widgets keep cards close to the header instead of leaving a large empty band above them.
+
+## [1.12.0+42] - 2026-10-28
+
+### Changed
+- Android widget cards show bank logos when available and card nicknames at the top right.
+- Resized widgets fill their bounds, with slightly more space between cards.
+- Widget customization saves from the top right; selected card details and backgrounds always appear on the home screen.
+
+## [1.11.0+41] - 2026-10-28
+
+### Changed
+- Widget cards now use their saved in-app backgrounds, with closely packed rows and smaller side margins while keeping every selected card visible.
+- Widget cards show network logos at the bottom right, with tighter masked-number spacing and no credit/debit labels, chip or contactless symbols.
+- Custom image backgrounds can be included through a separate widget setting; these images remain hidden by default.
+
+## [1.10.0+40] - 2026-10-28
+
+### Added
+- Android widget cards now keep their credit-card proportions, with bank-colored gradients and all selected cards staying visible as square, tall and wide widgets are resized.
+- Widget previews can show the cardholder name, bank, last four digits, card network and credit/debit type after approving the updated preview setting.
+
+## [1.9.0+39] - 2026-10-28
+
+### Added
+- Added resizable Android home-screen widgets with up to four selected favorite cards and separate settings for each widget.
+- Widget taps open the selected card after any required app unlock. Widget previews hide identifying details by default, with optional bank names and last four digits.
+- App lock now covers every screen while preserving your place in the app.
+
 ## [1.8.19+38] - 2026-10-28
 
 ### Fixed

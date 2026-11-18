@@ -23,7 +23,7 @@ class CardNetworkLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final network = forceNetwork ?? CardNetworkUtils.detectNetwork(cardNumber);
-    final logoPath = _getLogoPath(network);
+    final logoPath = assetPath(network);
 
     if (logoPath == null) {
       return SizedBox(height: height, width: height * 1.5);
@@ -102,7 +102,7 @@ class CardNetworkLogo extends StatelessWidget {
     }
   }
 
-  String? _getLogoPath(CardNetwork network) {
+  static String? assetPath(CardNetwork network) {
     switch (network) {
       case CardNetwork.visa:
         return 'assets/networks/visa.svg';

@@ -1,0 +1,9 @@
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="180dp" android:minHeight="240dp"
+    android:minResizeWidth="150dp" android:minResizeHeight="176dp"
+    android:targetCellWidth="3" android:targetCellHeight="3"
+    android:resizeMode="horizontal|vertical"
+    android:initialLayout="@layout/card_widget_square"
+    android:previewLayout="@layout/card_widget_square"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

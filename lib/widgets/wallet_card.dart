@@ -168,55 +168,7 @@ class WalletCard extends StatelessWidget {
     return false;
   }
 
-  Widget _buildMastercardCircles() {
-    return Positioned.fill(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final circleSize = constraints.maxHeight * 0.6;
-          return Stack(
-            children: [
-              Positioned(
-                left: 24,
-                top: (constraints.maxHeight - circleSize) / 2 + 10,
-                child: Container(
-                  width: circleSize,
-                  height: circleSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFE85D3F).withValues(alpha: 0.9),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 24 + circleSize * 0.6,
-                top: (constraints.maxHeight - circleSize) / 2 + 10,
-                child: Container(
-                  width: circleSize,
-                  height: circleSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFE85D3F).withValues(alpha: 0.7),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 24 + circleSize * 1.2,
-                top: (constraints.maxHeight - circleSize) / 2 + 10,
-                child: Container(
-                  width: circleSize,
-                  height: circleSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFE85D3F).withValues(alpha: 0.5),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
+  Widget _buildMastercardCircles() => const MastercardBackgroundPattern();
 
   Widget _buildCardContent(Color foregroundColor) {
     final secondaryForeground = CardContrast.secondary(foregroundColor);

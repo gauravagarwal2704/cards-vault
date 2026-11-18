@@ -34,6 +34,7 @@ enum BackupImportMode {
 }
 
 class SecureCardStorage {
+  static final changes = ValueNotifier<int>(0);
   static final SecureCardStorage _instance = SecureCardStorage._internal();
   factory SecureCardStorage() => _instance;
   SecureCardStorage._internal();
@@ -57,16 +58,22 @@ class SecureCardStorage {
   // save/delete half way through its multi-key operation.
   Future<void> _operationTail = Future<void>.value();
 
-  Future<T> _serialized<T>(Future<T> Function() operation) async {
+  Future<T> _serialized<T>(
+    Future<T> Function() operation, {
+    bool mutation = false,
+  }) async {
     final previous = _operationTail;
     final release = Completer<void>();
     _operationTail = release.future;
 
     await previous;
     try {
-      return await operation();
+      final result = await operation();
+      return result;
     } finally {
       release.complete();
+      // Failed operations may still have changed a record before failing.
+      if (mutation) changes.value++;
     }
   }
 
@@ -81,7 +88,7 @@ class SecureCardStorage {
         span.fail(e, stackTrace);
         throw Exception('Failed to save card: $e');
       }
-    });
+    }, mutation: true);
   }
 
   Future<String> _saveCardUnlocked(CardData cardData) async {
@@ -116,7 +123,7 @@ class SecureCardStorage {
         span.fail(e, stackTrace);
         throw Exception('Failed to update card: $e');
       }
-    });
+    }, mutation: true);
   }
 
   /// Updates one aspect of the latest persisted card instead of writing a
@@ -148,7 +155,7 @@ class SecureCardStorage {
         span.fail(e, stackTrace);
         throw Exception('Failed to update card: $e');
       }
-    });
+    }, mutation: true);
   }
 
   Future<void> _writeCardUnlocked(CardData cardData) {
@@ -298,7 +305,7 @@ class SecureCardStorage {
         span.fail(e, stackTrace);
         throw Exception('Failed to delete card: $e');
       }
-    });
+    }, mutation: true);
   }
 
   Future<void> deleteAllCards() {
@@ -314,7 +321,7 @@ class SecureCardStorage {
         span.fail(e, stackTrace);
         throw Exception('Failed to delete all cards: $e');
       }
-    });
+    }, mutation: true);
   }
 
   Future<void> _deleteAllCardsUnlocked() async {
@@ -723,7 +730,7 @@ class SecureCardStorage {
       } finally {
         await transaction.dispose();
       }
-    });
+    }, mutation: true);
   }
 
   Future<void> _writeImportedGroupsUnlocked(

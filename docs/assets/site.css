@@ -877,8 +877,8 @@ em {
 
 .faq-section {
   display:grid;
-  grid-template-columns:1fr 1.5fr;
-  gap:80px;
+  grid-template-columns:minmax(0,1fr);
+  gap:36px;
 }
 
 .faq-section .eyebrow {
@@ -890,9 +890,10 @@ em {
   margin-bottom:20px;
 }
 
-.faq-section>div>p:last-child {
+.faq-heading>p:last-child {
   color:var(--muted);
   font-size:15px;
+  margin-bottom:0;
 }
 
 .faq-list details {
@@ -933,6 +934,7 @@ em {
   font-size:14px;
   color:var(--muted);
   margin:16px 24px 0 0;
+  max-width:85ch;
 }
 
 .faq-list p a {

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/branding/app_icon_3d.webp" alt="CardVault app icon" width="96" />
+  <img src="docs/assets/app-icon-rose.png" alt="CardVault burgundy app icon" width="96" />
 </p>
 
 <h1 align="center">CardVault</h1>
@@ -182,7 +182,7 @@ For reproducible defects and current reports, see [GitHub Issues](https://github
 | Wrong backup password / damaged export | Use the password chosen for that export. Wrong passwords and corrupted ciphertext fail decryption; there is no password reset or server recovery. Oversized or malformed archives are also rejected. |
 | App crash or development build failure | Record the app/Android version and reproduction steps. For a local build, inspect `flutter logs`, run `flutter doctor`, and verify that the SDK satisfies `pubspec.yaml`. If stale build output is suspected, run `flutter clean`, then `flutter pub get`, and rebuild. Never include card data or raw NFC responses in public logs. |
 
-Detailed guides: [NFC troubleshooting](NFC_TROUBLESHOOTING_GUIDE.md), [quick fixes](QUICK_FIX_REFERENCE.md), and [RuPay/domestic-card compatibility](RUPAY_DOMESTIC_FIX.md). These guides include historical examples; current source and the limits above take precedence.
+Detailed guides: [NFC troubleshooting](docs/NFC_TROUBLESHOOTING_GUIDE.md), [quick fixes](docs/QUICK_FIX_REFERENCE.md), and [RuPay/domestic-card compatibility](docs/RUPAY_DOMESTIC_FIX.md). These guides include historical examples; current source and the limits above take precedence.
 
 </details>
 
@@ -275,7 +275,7 @@ lib/
 android/           # Native scanner, security integration, and widgets
 ios/               # iOS runner and platform configuration
 test/              # Flutter tests
-docs/              # Privacy policy, guides, and README images
+docs/              # Showcase, privacy policy, technical guides, and history
 play-store-assets/ # Store icon options and feature graphics
 ```
 
@@ -337,7 +337,7 @@ This table describes the current [UI network detector](lib/utils/card_network_ut
 
 Prefix rules are ordered to handle overlaps, especially RuPay/Discover. The detector currently classifies the `622126–622925` range under the broad UnionPay `62` rule despite a Discover comment in the source; classification can therefore differ from issuer/network expectations. The NFC service also uses application information when resolving card types. Report misclassified cards using redacted metadata rather than a full PAN.
 
-See [NFC troubleshooting](NFC_TROUBLESHOOTING_GUIDE.md) and the [technical reference](TECHNICAL_REFERENCE.md) for protocol details. Historical implementation documents may describe earlier versions; current source is authoritative.
+See [NFC troubleshooting](docs/NFC_TROUBLESHOOTING_GUIDE.md) and the [technical reference](docs/TECHNICAL_REFERENCE.md) for protocol details. Historical implementation documents may describe earlier versions; current source is authoritative.
 
 </details>
 
@@ -349,10 +349,10 @@ See [NFC troubleshooting](NFC_TROUBLESHOOTING_GUIDE.md) and the [technical refer
 | Topic | Documents |
 | --- | --- |
 | Current setup and maintenance | [App showcase / GitHub Pages publishing](docs/github-pages.md), [dependency maintenance](docs/dependency-maintenance.md), [Google Play supporter setup](docs/google-play-tips-setup.md), and the [changelog](CHANGELOG.md). |
-| NFC and EMV reference | [Technical reference](TECHNICAL_REFERENCE.md), [NFC troubleshooting](NFC_TROUBLESHOOTING_GUIDE.md), [domestic/RuPay compatibility](RUPAY_DOMESTIC_FIX.md), and [quick fixes](QUICK_FIX_REFERENCE.md). |
-| Security history | [Security audit](SECURITY_AUDIT.md) and [security implementation summary](SECURITY_IMPLEMENTATION_SUMMARY.md). These are historical project records, not an independent certification or a current assertion that every listed issue remains open or resolved. |
-| Architecture and setup history | [Project overview](PROJECT_OVERVIEW.md), [quick start](QUICK_START.md), [implementation summary](IMPLEMENTATION_SUMMARY.md), [settings implementation](IMPLEMENTATION_SUMMARY_SETTINGS.md), and [changes summary](CHANGES_SUMMARY.md). |
-| Build and packaging history | [Release build information](RELEASE_BUILD_INFO.md) and [APK optimization](APK_OPTIMIZATION.md). Check current Gradle files, signing configuration, and the publishing guide before using older build instructions. |
+| NFC and EMV reference | [Technical reference](docs/TECHNICAL_REFERENCE.md), [NFC troubleshooting](docs/NFC_TROUBLESHOOTING_GUIDE.md), [domestic/RuPay compatibility](docs/RUPAY_DOMESTIC_FIX.md), and [quick fixes](docs/QUICK_FIX_REFERENCE.md). |
+| Security history | [Security audit](docs/SECURITY_AUDIT.md) and [security implementation summary](docs/SECURITY_IMPLEMENTATION_SUMMARY.md). These are historical project records, not an independent certification or a current assertion that every listed issue remains open or resolved. |
+| Architecture and setup history | [Project overview](docs/PROJECT_OVERVIEW.md), [quick start](docs/QUICK_START.md), [implementation summary](docs/IMPLEMENTATION_SUMMARY.md), [settings implementation](docs/IMPLEMENTATION_SUMMARY_SETTINGS.md), and [changes summary](docs/CHANGES_SUMMARY.md). |
+| Build and packaging history | [Release build information](docs/RELEASE_BUILD_INFO.md) and [APK optimization](docs/APK_OPTIMIZATION.md). Check current Gradle files, signing configuration, and the publishing guide before using older build instructions. |
 | Complete previous README | [Archived README before the showcase refresh](docs/history/readme-before-showcase.md), preserving every original section and example. Its historical warnings, platform claims, and roadmap are labeled as historical rather than presented as current facts. |
 
 The README and current code take precedence where older guides disagree. In particular, the old encryption TODOs, Flutter/API 19 minimums, 30-second NFC poll timeout, and claim that every APDU includes `Le` do not describe the current implementation.

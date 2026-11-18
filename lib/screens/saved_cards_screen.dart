@@ -1,4 +1,9 @@
+import 'dart:async';
 import 'dart:ui';
+
+import '../providers/app_lock_provider.dart';
+import '../services/home_widget_service.dart';
+import 'home_widget_settings_screen.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -305,6 +310,102 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
         .toSet();
   }
 
+  bool _handlingWidgetLaunch = false;
+
+  void _scheduleWidgetLaunch() {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _handleWidgetLaunch());
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  Future<void> _handleWidgetLaunch() async {
+    if (!mounted || _handlingWidgetLaunch) return;
+    final service = HomeWidgetService.instance;
+    final request = service.pending.value;
+    final lock = context.read<AppLockProvider>();
+    if (request == null ||
+        !lock.isInitialized ||
+        lock.isLocked ||
+        lock.isAuthenticating ||
+        lock.isBackgrounded) {
+      return;
+    }
+    _handlingWidgetLaunch = true;
+    try {
+      final cards = await _cardStorage.loadCards();
+      if (!mounted ||
+          lock.isLocked ||
+          lock.isAuthenticating ||
+          lock.isBackgrounded ||
+          !identical(request, service.pending.value)) {
+        return;
+      }
+      service.pending.value = null;
+      final navigator = Navigator.of(context);
+      navigator.popUntil((route) => route.isFirst);
+      if (request.widgetId != null) {
+        unawaited(
+          _reloadAfterWidgetRoute(
+            navigator.push<void>(
+              MaterialPageRoute(
+                builder: (_) => HomeWidgetSettingsScreen(
+                  widgetId: request.widgetId!,
+                  cards: cards,
+                ),
+              ),
+            ),
+          ),
+        );
+      } else {
+        final index = cards.indexWhere((card) => card.id == request.cardId);
+        if (index < 0) {
+          service.refresh();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('This card is no longer in your wallet.'),
+            ),
+          );
+        } else {
+          unawaited(
+            _reloadAfterWidgetRoute(
+              navigator.push<bool>(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      CardDetailScreen(card: cards[index], cardIndex: index),
+                ),
+              ),
+            ),
+          );
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        // Consume this attempt; an explicit new tap can retry a storage failure.
+        if (identical(service.pending.value, request)) {
+          service.pending.value = null;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open this widget. Please try again.'),
+          ),
+        );
+      }
+    } finally {
+      _handlingWidgetLaunch = false;
+      if (mounted &&
+          service.pending.value != null &&
+          !lock.isLocked &&
+          !lock.isBackgrounded) {
+        _scheduleWidgetLaunch();
+      }
+    }
+  }
+
+  Future<void> _reloadAfterWidgetRoute(Future<Object?> route) async {
+    await route;
+    if (mounted) await _loadCards();
+  }
+
   late AnimationController _blurController;
   late AnimationController _optionsController;
   late AnimationController _headerController;
@@ -315,6 +416,8 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
   @override
   void initState() {
     super.initState();
+    HomeWidgetService.instance.pending.addListener(_scheduleWidgetLaunch);
+    _scheduleWidgetLaunch();
     AppLogService.instance.action('Navigation', 'Opened wallet');
     _loadCards();
 
@@ -371,6 +474,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
 
   @override
   void dispose() {
+    HomeWidgetService.instance.pending.removeListener(_scheduleWidgetLaunch);
     _blurController.dispose();
     _optionsController.dispose();
     _headerController.dispose();
@@ -381,6 +485,8 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final lock = context.watch<AppLockProvider?>();
+    if (lock != null && !lock.isLocked) _scheduleWidgetLaunch();
     if (AppMotion.reduceMotion(context)) {
       _headerController.value = 1;
     }
@@ -409,6 +515,7 @@ class _SavedCardsScreenState extends State<SavedCardsScreen>
         _isLoading = false;
       });
       span.complete(details: {'cardCount': cards.length});
+      if (widget.cardLoader == null) HomeWidgetService.instance.refresh();
 
       // Card faces can render from the stored snapshot while the independent
       // group lookup and cardholder search/filter index finish in parallel.

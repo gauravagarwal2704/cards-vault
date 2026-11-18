@@ -12,6 +12,7 @@ import 'providers/app_lock_provider.dart';
 import 'providers/app_icon_provider.dart';
 import 'providers/profile_provider.dart';
 import 'services/auth_service.dart';
+import 'services/home_widget_service.dart';
 import 'models/app_icon_option.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/saved_cards_screen.dart';
@@ -51,7 +52,7 @@ void main() {
   );
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({
     super.key,
     this.appLockProviderFactory,
@@ -60,6 +61,13 @@ class MyApp extends StatelessWidget {
 
   final AppLockProvider Function()? appLockProviderFactory;
   final Future<void> Function()? securityInitializer;
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  bool _vaultReady = false;
 
   @override
   Widget build(BuildContext context) {
@@ -71,7 +79,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => AppIconProvider()),
         ChangeNotifierProvider(
-          create: (_) => appLockProviderFactory?.call() ?? AppLockProvider(),
+          create: (_) =>
+              widget.appLockProviderFactory?.call() ?? AppLockProvider(),
         ),
         ChangeNotifierProvider(create: (_) => NfcProvider()),
         ChangeNotifierProvider(create: (_) => CameraProvider()),
@@ -80,6 +89,14 @@ class MyApp extends StatelessWidget {
       ],
       child: Consumer2<ThemeProvider, AppLockProvider>(
         builder: (context, themeProvider, appLockProvider, child) {
+          HomeWidgetService.instance.updateTheme(
+            themeProvider.getPrimaryColor(),
+            themeProvider.getPrimaryContainerColor(),
+            refreshWidgets:
+                _vaultReady &&
+                appLockProvider.isInitialized &&
+                !appLockProvider.isLocked,
+          );
           return MaterialApp(
             title: 'CardVault',
             debugShowCheckedModeBanner: false,
@@ -95,10 +112,20 @@ class MyApp extends StatelessWidget {
                   brightness: theme.colorScheme.brightness,
                   navigationBarColor: theme.scaffoldBackgroundColor,
                 ),
-                child: child ?? const SizedBox.shrink(),
+                child: _AppLockWrapper(
+                  active:
+                      _vaultReady &&
+                      context.watch<ProfileProvider>().hasCompletedOnboarding,
+                  child: child ?? const SizedBox.shrink(),
+                ),
               );
             },
-            home: _AppEntry(securityInitializer: securityInitializer),
+            home: _AppEntry(
+              securityInitializer: widget.securityInitializer,
+              onReady: () {
+                if (mounted) setState(() => _vaultReady = true);
+              },
+            ),
           );
         },
       ),
@@ -107,7 +134,9 @@ class MyApp extends StatelessWidget {
 }
 
 class _AppEntry extends StatefulWidget {
-  const _AppEntry({this.securityInitializer});
+  const _AppEntry({this.securityInitializer, required this.onReady});
+
+  final VoidCallback onReady;
 
   final Future<void> Function()? securityInitializer;
 
@@ -119,11 +148,13 @@ class _AppEntryState extends State<_AppEntry> {
   bool _showSelectedIconSplash = true;
   bool _splashExitScheduled = false;
   bool _securityInitialized = false;
+  bool _hasUnlocked = false;
 
   @override
   void initState() {
     super.initState();
     _initializeSecurity();
+    unawaited(HomeWidgetService.instance.start());
   }
 
   Future<void> _initializeSecurity() async {
@@ -163,11 +194,15 @@ class _AppEntryState extends State<_AppEntry> {
           WidgetsBinding.instance.allowFirstFrame();
         }
         Future<void>.delayed(const Duration(milliseconds: 420), () {
-          if (mounted) setState(() => _showSelectedIconSplash = false);
+          if (mounted) {
+            setState(() => _showSelectedIconSplash = false);
+            widget.onReady();
+          }
         });
       });
     }
 
+    if (ready && !appLock.isLocked) _hasUnlocked = true;
     return AnimatedSwitcher(
       duration: AppMotion.resolve(context, AppMotion.emphasized),
       switchInCurve: Curves.easeOutCubic,
@@ -190,10 +225,9 @@ class _AppEntryState extends State<_AppEntry> {
               option: appIcon.selected,
             )
           : profile.hasCompletedOnboarding
-          ? const _AppLockWrapper(
-              key: ValueKey('home'),
-              child: SavedCardsScreen(),
-            )
+          ? _hasUnlocked
+                ? const SavedCardsScreen(key: ValueKey('home'))
+                : const SizedBox.shrink(key: ValueKey('awaiting-unlock'))
           : const OnboardingScreen(key: ValueKey('onboarding')),
     );
   }
@@ -220,16 +254,27 @@ class _SelectedAppIconSplash extends StatelessWidget {
   }
 }
 
-class _AppLockWrapper extends StatelessWidget {
+class _AppLockWrapper extends StatefulWidget {
   final Widget child;
+  final bool active;
 
-  const _AppLockWrapper({super.key, required this.child});
+  const _AppLockWrapper({required this.child, required this.active});
+
+  @override
+  State<_AppLockWrapper> createState() => _AppLockWrapperState();
+}
+
+class _AppLockWrapperState extends State<_AppLockWrapper> {
+  bool _attemptedUnlock = false;
 
   @override
   Widget build(BuildContext context) {
     final appLockProvider = context.watch<AppLockProvider>();
 
-    if (appLockProvider.isLocked && !appLockProvider.isAuthenticating) {
+    final locked = widget.active && appLockProvider.isLocked;
+    if (!locked) _attemptedUnlock = false;
+    if (locked && !_attemptedUnlock && !appLockProvider.isAuthenticating) {
+      _attemptedUnlock = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (context.mounted) {
           appLockProvider.authenticate(context);
@@ -237,13 +282,22 @@ class _AppLockWrapper extends StatelessWidget {
       });
     }
 
-    if (appLockProvider.isLocked) {
-      return ColoredBox(
-        color: Theme.of(context).colorScheme.surface,
-        child: const _AppLockOverlay(),
-      );
-    }
-    return child;
+    // Keep the Navigator mounted while hiding every route, including deep links.
+    // Removing it on lock would discard the pending destination and back stack.
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Offstage(
+          offstage: locked,
+          child: TickerMode(enabled: !locked, child: widget.child),
+        ),
+        if (locked)
+          ColoredBox(
+            color: Theme.of(context).colorScheme.surface,
+            child: const _AppLockOverlay(),
+          ),
+      ],
+    );
   }
 }
 

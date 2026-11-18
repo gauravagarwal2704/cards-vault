@@ -86,6 +86,7 @@ flutter {
 }
 
 dependencies {
+    testImplementation "junit:junit:4.13.2"
     // Stripe's last portable CardScan model/runtime is vendored as a local,
     // telemetry-free Android module. It analyzes CameraX preview frames and
     // does not use Google Play Services or the Stripe SDK's analytics layer.

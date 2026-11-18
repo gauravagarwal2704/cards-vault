@@ -58,11 +58,30 @@
                  the Android process has started. This theme is visible to the user
                  while the Flutter UI initializes. After that, this theme continues
                  to determine the Window background behind the Flutter UI. -->
+            <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
             <meta-data
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
         </activity>
+        <receiver android:name=".CardWidgetProvider" android:exported="false" android:label="Card Vault grid">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/card_widget_info" />
+        </receiver>
+        <receiver android:name=".VerticalCardWidgetProvider" android:exported="false" android:label="Card Vault vertical">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/card_widget_vertical_info" />
+        </receiver>
+        <receiver android:name=".CompactCardWidgetProvider" android:exported="false" android:label="Card Vault compact square">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/card_widget_compact_info" />
+        </receiver>
         <activity-alias
             android:name=".MainActivityThreeD"
             android:targetActivity=".MainActivity"

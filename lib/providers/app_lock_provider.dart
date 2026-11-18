@@ -80,6 +80,7 @@ class AppLockProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool get isAppLockEnabled => _isAppLockEnabled;
   bool get isLocked => _isLocked;
   bool get isAuthenticating => _isAuthenticating;
+  bool get isBackgrounded => _isBackgrounded;
   bool get isInitialized => _isInitialized;
 
   Future<void> _initialize() async {
@@ -190,13 +191,16 @@ class AppLockProvider extends ChangeNotifier with WidgetsBindingObserver {
         unawaited(AppLogService.instance.flush());
         break;
       case AppLifecycleState.resumed:
+        final wasBackgrounded = _isBackgrounded;
         final backgroundedSince = _backgroundedSince;
         _isBackgrounded = false;
         _backgroundedSince = null;
         if (backgroundedSince != null &&
             _now().difference(backgroundedSince) >= lockTimeout) {
-          _lockNow(cancelAuthentication: true);
+          _lockNow(cancelAuthentication: true, notify: false);
         }
+        // Pending widget launches must resume even within the unlock grace period.
+        if (wasBackgrounded) notifyListeners();
         break;
     }
   }

@@ -1,3 +1,10 @@
+# Branch workflow
+
+- Before making changes for a new feature, create and switch to a feature branch.
+  Use the `codex/` prefix by default.
+- Use one branch per feature. Keep refinements, follow-up changes, and validation
+  repairs for the same feature on its existing branch, including in future chats.
+
 # Versioning and change records
 
 After each completed app change, update the app version and record the change

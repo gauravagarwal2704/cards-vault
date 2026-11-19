@@ -13,6 +13,15 @@ class AppRelease {
 
   static const history = [
     AppRelease(
+      version: '1.14.1',
+      buildNumber: 48,
+      date: '19 November 2026',
+      changes: [
+        'Updated card scanning, image cropping, and file selection libraries.',
+        'Updated app information, card artwork, and Android compatibility libraries.',
+      ],
+    ),
+    AppRelease(
       version: '1.14.0',
       buildNumber: 47,
       date: '28 October 2026',

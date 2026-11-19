@@ -42,6 +42,8 @@ void main() {
       'ACCESS_NETWORK_STATE',
       'WAKE_LOCK',
       'RECEIVE_BOOT_COMPLETED',
+      'READ_EXTERNAL_STORAGE',
+      'WRITE_EXTERNAL_STORAGE',
     ]) {
       expect(
         RegExp(

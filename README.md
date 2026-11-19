@@ -91,7 +91,7 @@ Screenshots from the [Google Play listing](https://play.google.com/store/apps/de
 | **Validated backup imports** | Imports validate archive paths, sizes, entry counts, and image limits. Records are validated and re-encrypted before replacing wallet data, with rollback support if applying an import fails. |
 | **Offline Android release** | The production manifest removes Internet and network-state permissions, disables cleartext traffic and Android system backup, and removes unused microphone and background-service permissions. Camera recognition uses bundled local models. |
 | **Private diagnostics** | Local diagnostics are bounded, encrypted, designed to redact sensitive fields, and expire after 72 hours. Attaching diagnostics to feedback requires an explicit choice. Debug logging sanitizes sensitive values. |
-| **Dependency maintenance** | Application dependencies are pinned in the lockfile; Dependabot is configured for weekly Flutter and Android dependency updates. See [dependency maintenance](docs/dependency-maintenance.md). |
+| **Dependency maintenance** | Application dependencies are pinned in the lockfile; Dependabot is configured for weekly Flutter and Android dependency updates. See [dependency maintenance](docs/dependency-maintenance.md) and the [November dependency review](docs/dependency-updates-2026-11-19.md). |
 
 ### Security boundaries
 
@@ -230,8 +230,8 @@ The [production manifest](android/app/src/main/AndroidManifest.xml) also configu
 
 | Area | Libraries / implementation |
 | --- | --- |
-| NFC and state | `flutter_nfc_kit` 3.6.2; `provider` 6.1.5+1 |
-| Secure storage and encryption | `flutter_secure_storage` 9.2.4; `encrypt` 5.0.3; `pointycastle` 3.9.1; `crypto` 3.0.7 |
+| NFC and state | `flutter_nfc_kit` 3.7.0; `provider` 6.1.5+1 |
+| Secure storage and encryption | `flutter_secure_storage` 9.2.4; `encrypt` 5.0.3; `pointycastle` 3.9.1; `crypto` 3.0.8 |
 | Device authentication and IDs | `local_auth` 2.3.0; `uuid` 4.6.0 |
 | Camera and images | `camera`, `image_picker`, `image`, `image_cropper`; Android uses a local, telemetry-free CardScan module with Tesseract for supplementary text extraction. |
 | Backups and sharing | `archive`, `file_picker`, `path_provider`, `share_plus` |

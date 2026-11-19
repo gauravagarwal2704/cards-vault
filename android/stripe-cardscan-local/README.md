@@ -22,8 +22,8 @@ loads `darknite_1_1_1_16.tflite`; `SSDOcr.Factory` creates an
 `InterpreterWrapperImpl`; and every OCR inference calls the LiteRT Interpreter
 API. Removing the runtime would disable both live and gallery PAN recognition.
 
-The runtime is pinned to `com.google.ai.edge.litert:litert:2.2.0`, the supported
-Google Maven release reviewed on 2026-08-26. The scanner uses only the CPU
+The runtime is pinned to `com.google.ai.edge.litert:litert:2.3.2`, the supported
+Google Maven release reviewed for the 2026-11-19 dependency update. The scanner uses only the CPU
 Interpreter API (its obsolete NNAPI toggle has been removed), so the app excludes the optional
 `libLiteRtClGlAccelerator.so` shipped in LiteRT 2.x. The model remains bundled
 locally; optional LiteRT model-delivery foreground-service permissions are

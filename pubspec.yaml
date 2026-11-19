@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.14.0+47
+version: 1.14.1+48
 
 environment:
   sdk: ^3.13.0
@@ -30,10 +30,10 @@ dependencies:
   share_plus: 10.1.4
   
   # SVG rendering
-  flutter_svg: 2.3.0
+  flutter_svg: 2.4.0
   
   # NFC functionality for reading credit card data
-  flutter_nfc_kit: 3.6.2
+  flutter_nfc_kit: 3.7.0
   
   # State management
   provider: 6.1.5+1
@@ -42,33 +42,33 @@ dependencies:
   path_provider: 2.1.6
   
   # Shared preferences
-  shared_preferences: 2.5.5
+  shared_preferences: 2.5.6
   
   # File picker
-  file_picker: 10.3.10
+  file_picker: 11.0.3
   
   # Package info
-  package_info_plus: 8.3.1
+  package_info_plus: 9.0.1
 
   # Optional supporter tips through the installed app store
   in_app_purchase: 3.3.1
 
   # Open external project and support links
-  url_launcher: 6.3.2
+  url_launcher: 6.3.3
   
   # Security packages
   flutter_secure_storage: 9.2.4
   encrypt: 5.0.3
   local_auth: 2.3.0
-  crypto: 3.0.7
+  crypto: 3.0.8
   pointycastle: 3.9.1
   uuid: 4.6.0
   
   # OCR and Camera functionality
-  image_picker: 1.2.3
+  image_picker: 1.2.4
   image: 4.3.0
-  camera: 0.10.6
-  image_cropper: 11.0.0
+  camera: 0.12.2
+  image_cropper: 12.2.1
 
   # Deep links into system settings (NFC, app permissions)
   app_settings: 5.2.0
@@ -92,6 +92,10 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+  # file_picker 11's SwiftPM media picker conflicts with image_cropper's
+  # TOCropViewController version. CocoaPods supports a document-only picker.
+  config:
+    enable-swift-package-manager: false
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

@@ -17,14 +17,13 @@ class _TemporaryPathProvider extends PathProviderPlatform {
   Future<String?> getTemporaryPath() async => path;
 }
 
-class _RecordingFilePicker extends FilePicker {
+class _RecordingFilePicker {
   String? fileName;
   FileType? fileType;
   List<String>? allowedExtensions;
   Uint8List? bytes;
   String? result = 'content://downloads/cardvault-diagnostics.txt';
 
-  @override
   Future<String?> saveFile({
     String? dialogTitle,
     String? fileName,
@@ -80,7 +79,7 @@ void main() {
         AppLogService.instance.record('Test', 'PAN 4111111111111111');
         final service = SupportEmailService(
           channel: channel,
-          filePicker: filePicker,
+          saveFile: filePicker.saveFile,
         );
         await service.sendFeedback(
           type: SupportFeedbackType.bugReport,

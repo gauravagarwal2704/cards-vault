@@ -13,7 +13,8 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.cardswallet.cards_vault"
-    compileSdk = flutter.compileSdkVersion
+    // AndroidX Core 1.19 requires API 37; keep the app target SDK unchanged.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

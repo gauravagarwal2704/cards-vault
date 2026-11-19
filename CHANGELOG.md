@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.14.1+48] - 2026-11-19
+
+### Changed
+- Updated the Flutter and Android dependencies proposed by Dependabot, including camera/NFC, file selection, image cropping, app information, SVG artwork, and hashing.
+- Migrated backup import and diagnostic export to the current file-picker API.
+- Kept Android file access scoped by removing newly introduced external-storage permissions.
+- Resolved the iOS picker/cropper library conflict using a document-only CocoaPods picker and refreshed native locks.
+- Updated Android build tooling and the local scanner runtime; synchronized the Android plugin pins and verified the Gradle distribution checksum.
+
 ## [1.14.0+47] - 2026-10-28
 
 ### Added

@@ -16,15 +16,23 @@ enum SupportFeedbackType {
   final String label;
 }
 
+typedef DiagnosticFileSaver = Future<String?> Function({
+  required String dialogTitle,
+  required String fileName,
+  required FileType type,
+  required List<String> allowedExtensions,
+  required Uint8List bytes,
+});
+
 class SupportEmailService {
-  SupportEmailService({MethodChannel? channel, FilePicker? filePicker})
+  SupportEmailService({MethodChannel? channel, DiagnosticFileSaver? saveFile})
     : _channel = channel ?? const MethodChannel('cards_wallet/support'),
-      _filePicker = filePicker ?? FilePicker.platform;
+      _saveFile = saveFile ?? FilePicker.saveFile;
 
   static const String recipient = 'agarwalgaurav.apps@gmail.com';
 
   final MethodChannel _channel;
-  final FilePicker _filePicker;
+  final DiagnosticFileSaver _saveFile;
 
   /// Opens the platform document picker and writes a sanitized text report to
   /// the location selected by the user. Returns false when the picker is
@@ -37,7 +45,7 @@ class SupportEmailService {
     try {
       final details = await _deviceDetails();
       final report = await AppLogService.instance.exportRecentLogs(details);
-      final savedPath = await _filePicker.saveFile(
+      final savedPath = await _saveFile(
         dialogTitle: 'Save CardVault diagnostic logs',
         fileName: _diagnosticFileName(),
         type: FileType.custom,

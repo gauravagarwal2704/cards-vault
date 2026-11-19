@@ -3,6 +3,13 @@
     <uses-permission android:name="android.permission.NFC" />
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Backup/document and gallery selection use scoped system pickers. -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        tools:node="remove" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- The camera is used for still card images only. camera_android declares
          microphone access for video recording, which CardVault never enables. -->

@@ -22,6 +22,16 @@ operate, or preserve license/provenance obligations.
 - `stripecardscan/build.gradle` assigns a CardVault-only group/version so the
   fork cannot be confused with Stripe's published artifact.
 
+## Dependency refresh (fork revision 2)
+
+The 2026-11-19 Dependabot consolidation updates LiteRT to 2.3.2 and the
+annotation, AppCompat, ConstraintLayout, Core KTX, and coroutine dependencies.
+The Stripe source baseline and bundled model are unchanged. The runtime remains
+CPU-only and offline; the optional GPU accelerator is still excluded. The
+instrumentation smoke test now runs an actual inference with both output
+tensors and requires finite results instead of only opening the model.
+Physical-device camera/NFC validation remains a separate release gate.
+
 ## Camera module
 
 - `camera-core/.../CameraAdapter.kt`: adds idempotent explicit destruction when

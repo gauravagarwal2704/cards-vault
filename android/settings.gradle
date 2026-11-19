@@ -18,9 +18,9 @@ pluginManagement {
 
 plugins {
     id "dev.flutter.flutter-plugin-loader" version "1.0.0"
-    id "com.android.application" version "9.1.0" apply false
-    id "com.android.library" version "9.1.0" apply false
-    id "org.jetbrains.kotlin.android" version "2.4.0" apply false
+    id "com.android.application" version "9.5.0" apply false
+    id "com.android.library" version "9.5.0" apply false
+    id "org.jetbrains.kotlin.android" version "2.4.21" apply false
 }
 
 include ":app"
@@ -58,6 +58,18 @@ project(":stripe-cardscan-ml-core-cardscan").projectDir = file("stripe-cardscan-
 project(":stripe-cardscan-local").projectDir = file("stripe-cardscan-local/stripecardscan")
 
 gradle.beforeProject { project ->
+    // file_picker 11 assumes every AGP 9 app uses built-in Kotlin and skips
+    // applying KGP. Flutter's source-based compatibility detector sees that
+    // conditional declaration and does not apply KGP either. Keep the plugin's
+    // Kotlin classes compiled while this app retains the legacy KGP path.
+    if (project.name == "file_picker") {
+        project.pluginManager.withPlugin("com.android.library") {
+            if (project.providers.gradleProperty("android.builtInKotlin").getOrElse("true") == "false") {
+                project.pluginManager.apply("org.jetbrains.kotlin.android")
+            }
+        }
+    }
+
     def aliasJcenter = { handler ->
         handler.metaClass.jcenter = { Object[] args ->
             handler.mavenCentral()
@@ -74,7 +86,7 @@ gradle.beforeProject { project ->
         configurations.classpath {
             resolutionStrategy.eachDependency { details ->
                 if (details.requested.group == "com.android.tools.build" && details.requested.name == "gradle") {
-                    details.useVersion "9.1.0"
+                    details.useVersion "9.5.0"
                 }
             }
         }

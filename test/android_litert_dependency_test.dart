@@ -20,7 +20,7 @@ void main() {
 
     expect(
       implementationGradle,
-      contains('com.google.ai.edge.litert:litert:2.2.0'),
+      contains('com.google.ai.edge.litert:litert:2.3.2'),
     );
     expect(baseGradle, isNot(contains('com.google.ai.edge.litert:litert:')));
     expect(scannerGradle, isNot(contains('com.google.ai.edge.litert:litert:')));

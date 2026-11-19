@@ -21,6 +21,9 @@
 .swiftpm/
 migrate_working_dir/
 
+# Kotlin compiler session state
+/android/.kotlin/
+
 # Generated diagnostics, captures, and local scratch work
 **/build/reports/
 /reports/

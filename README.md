@@ -393,4 +393,4 @@ For code changes, follow [AGENTS.md](AGENTS.md), keep security controls intact, 
 
 ## License
 
-This repository does not currently include a project-wide license file. Third-party components retain their own licenses; bundled notices are included with those components and in the app's open-source license view.
+CardVault is open-source software licensed under the [MIT License](LICENSE). Third-party components retain their own licenses; bundled notices are included with those components and in the app's open-source license view.

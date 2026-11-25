@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.14.4+51] - 2026-11-25
+
+### Changed
+- Released CardVault under the MIT open-source license and updated the README licensing information.
+
 ## [1.14.2+49] - 2026-11-25
 
 ### Fixed

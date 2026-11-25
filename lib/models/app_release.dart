@@ -13,6 +13,14 @@ class AppRelease {
 
   static const history = [
     AppRelease(
+      version: '1.14.4',
+      buildNumber: 51,
+      date: '25 November 2026',
+      changes: [
+        'CardVault is now available under the MIT open-source license.',
+      ],
+    ),
+    AppRelease(
       version: '1.14.2',
       buildNumber: 49,
       date: '25 November 2026',

@@ -17,6 +17,8 @@ class _FakeSupportPurchaseController extends ChangeNotifier
         _product('support_tip_3', 99),
         _product('support_tip_4', 149),
         _product('support_tip_5', 249),
+        _product('support_tip_6', 499),
+        _product('support_tip_7', 999),
       ];
 
   static ProductDetails _product(String id, double amount) => ProductDetails(
@@ -70,7 +72,7 @@ class _FakeSupportPurchaseController extends ChangeNotifier
 }
 
 void main() {
-  testWidgets('support page offers quick and configured custom tips', (
+  testWidgets('support page offers quick tips and all seven selectable amounts', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(360, 800));
@@ -146,25 +148,48 @@ void main() {
       ),
     );
 
-    await tester.ensureVisible(find.byKey(const ValueKey('custom-tip')));
+    await tester.ensureVisible(find.byKey(const ValueKey('more-amounts')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('custom-tip')));
+    await tester.tap(find.byKey(const ValueKey('more-amounts')));
     await tester.pumpAndSettle();
-    expect(find.text('Choose a custom amount'), findsOneWidget);
+    expect(find.text('More amounts'), findsNWidgets(2));
+    expect(find.byType(TextField), findsNothing);
+    for (var tier = 1; tier <= 7; tier++) {
+      expect(
+        find.byKey(ValueKey('more-amounts-support_tip_$tier')),
+        findsOneWidget,
+      );
+    }
 
-    await tester.enterText(
-      find.byKey(const ValueKey('custom-tip-amount')),
-      '49',
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('submit-more-amounts')),
+          )
+          .onPressed,
+      isNull,
+    );
+    await tester.tap(find.byKey(const ValueKey('more-amounts-support_tip_7')));
+    await tester.pump();
+    expect(
+      tester
+          .widget<ChoiceChip>(
+            find.byKey(const ValueKey('more-amounts-support_tip_7')),
+          )
+          .selected,
+      isTrue,
     );
     await tester.pump();
-    expect(find.text('Purchase for ₹49'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('submit-custom-tip')));
+    expect(find.text('Purchase for ₹999'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('submit-more-amounts')));
     await tester.pumpAndSettle();
 
-    expect(controller.purchasedProduct?.id, 'support_tip_2');
+    expect(controller.purchasedProduct?.id, 'support_tip_7');
     expect(find.text('1 Supporter Star'), findsOneWidget);
     expect(
-      find.text('Thank you for your ₹49 support! You earned a Supporter Star.'),
+      find.text(
+        'Thank you for your ₹999 support! You earned a Supporter Star.',
+      ),
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);

@@ -88,13 +88,13 @@ class _SupportDeveloperScreenState extends State<SupportDeveloperScreen> {
     await _controller.purchase(product);
   }
 
-  Future<void> _showCustomTip() async {
+  Future<void> _showMoreAmounts() async {
     final product = await showModalBottomSheet<ProductDetails>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
-      builder: (_) => _CustomTipSheet(products: _controller.products),
+      builder: (_) => _MoreAmountsSheet(products: _controller.products),
     );
     if (product != null && mounted) await _purchase(product);
   }
@@ -245,12 +245,12 @@ class _SupportDeveloperScreenState extends State<SupportDeveloperScreen> {
                       ),
                       const SizedBox(height: AppSpacing.sm),
                       OutlinedButton.icon(
-                        key: const ValueKey('custom-tip'),
+                        key: const ValueKey('more-amounts'),
                         onPressed: _controller.isPurchasing
                             ? null
-                            : _showCustomTip,
+                            : _showMoreAmounts,
                         icon: const Icon(Icons.tune_rounded),
-                        label: const Text('Custom amount'),
+                        label: const Text('More amounts'),
                       ),
                     ],
                     if (_controller.message != null) ...[
@@ -476,51 +476,20 @@ class _SupportReason extends StatelessWidget {
   }
 }
 
-class _CustomTipSheet extends StatefulWidget {
-  const _CustomTipSheet({required this.products});
+class _MoreAmountsSheet extends StatefulWidget {
+  const _MoreAmountsSheet({required this.products});
 
   final List<ProductDetails> products;
 
   @override
-  State<_CustomTipSheet> createState() => _CustomTipSheetState();
+  State<_MoreAmountsSheet> createState() => _MoreAmountsSheetState();
 }
 
-class _CustomTipSheetState extends State<_CustomTipSheet> {
-  final TextEditingController _amountController = TextEditingController();
+class _MoreAmountsSheetState extends State<_MoreAmountsSheet> {
   ProductDetails? _selectedProduct;
-  String? _validationMessage;
-
-  @override
-  void dispose() {
-    _amountController.dispose();
-    super.dispose();
-  }
-
-  void _findAmount(String value) {
-    final parsed = double.tryParse(value.trim().replaceAll(',', '.'));
-    final matches = parsed == null
-        ? const <ProductDetails>[]
-        : widget.products
-              .where((product) => (product.rawPrice - parsed).abs() < 0.005)
-              .toList();
-    setState(() {
-      _selectedProduct = matches.isEmpty ? null : matches.first;
-      _validationMessage = value.trim().isEmpty
-          ? null
-          : _selectedProduct == null
-          ? 'Google Play can charge only a configured amount. Choose one below.'
-          : null;
-    });
-  }
 
   void _selectProduct(ProductDetails product) {
-    _amountController.text = product.rawPrice.toStringAsFixed(
-      product.rawPrice == product.rawPrice.truncateToDouble() ? 0 : 2,
-    );
-    setState(() {
-      _selectedProduct = product;
-      _validationMessage = null;
-    });
+    setState(() => _selectedProduct = product);
   }
 
   void _submit() {
@@ -530,10 +499,6 @@ class _CustomTipSheetState extends State<_CustomTipSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final symbol = widget.products.first.currencySymbol.isEmpty
-        ? widget.products.first.currencyCode
-        : widget.products.first.currencySymbol;
-
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
         AppSpacing.lg,
@@ -546,49 +511,35 @@ class _CustomTipSheetState extends State<_CustomTipSheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Choose a custom amount',
+            'More amounts',
             style: AppTypography.dialogTitle(
               color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Google Play requires each amount to use a configured price point.',
+            'Choose an amount to receive one Supporter Star.',
             style: AppTypography.body(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          TextField(
-            key: const ValueKey('custom-tip-amount'),
-            controller: _amountController,
-            autofocus: true,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
-              labelText: 'Amount',
-              prefixText: '$symbol ',
-              errorText: _validationMessage,
-              border: const OutlineInputBorder(),
-            ),
-            onChanged: _findAmount,
-            onSubmitted: (_) => _submit(),
-          ),
-          const SizedBox(height: AppSpacing.sm),
           Wrap(
             spacing: AppSpacing.xs,
             runSpacing: AppSpacing.xs,
             children: [
               for (final product in widget.products)
-                ActionChip(
-                  key: ValueKey('custom-tip-${product.id}'),
+                ChoiceChip(
+                  key: ValueKey('more-amounts-${product.id}'),
                   label: Text(product.price),
-                  onPressed: () => _selectProduct(product),
+                  selected: _selectedProduct?.id == product.id,
+                  onSelected: (_) => _selectProduct(product),
                 ),
             ],
           ),
           const SizedBox(height: AppSpacing.lg),
           FilledButton(
-            key: const ValueKey('submit-custom-tip'),
+            key: const ValueKey('submit-more-amounts'),
             onPressed: _selectedProduct == null ? null : _submit,
             child: Text(
               _selectedProduct == null

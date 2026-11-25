@@ -34,6 +34,10 @@ class SupportPurchaseService extends ChangeNotifier
   SupportPurchaseService._({InAppPurchase? billing})
     : _billing = billing ?? InAppPurchase.instance;
 
+  @visibleForTesting
+  SupportPurchaseService.forTesting({required InAppPurchase billing})
+    : this._(billing: billing);
+
   static final SupportPurchaseService instance = SupportPurchaseService._();
 
   /// Create these IDs as consumable one-time products in Play Console.
@@ -244,8 +248,19 @@ class SupportPurchaseService extends ChangeNotifier
   }
 
   Future<void> _handlePurchaseUpdates(List<PurchaseDetails> purchases) async {
+    var refreshProducts = false;
     for (final purchase in purchases) {
-      if (!productIds.contains(purchase.productID)) continue;
+      // Play can dismiss checkout without a Purchase object. The plugin emits
+      // a cancellation/error with an empty product ID in that case.
+      final checkoutEndedWithoutProduct =
+          purchase.productID.isEmpty &&
+          _isPurchasing &&
+          (purchase.status == PurchaseStatus.canceled ||
+              purchase.status == PurchaseStatus.error);
+      if (!productIds.contains(purchase.productID) &&
+          !checkoutEndedWithoutProduct) {
+        continue;
+      }
 
       if (purchase.status == PurchaseStatus.pending) {
         _isPurchasing = true;
@@ -260,6 +275,8 @@ class SupportPurchaseService extends ChangeNotifier
       }
       if (purchase.status == PurchaseStatus.canceled) {
         _isPurchasing = false;
+        _message = null;
+        refreshProducts = true;
         continue;
       }
 
@@ -298,6 +315,15 @@ class SupportPurchaseService extends ChangeNotifier
       }
     }
     notifyListeners();
+    if (refreshProducts) {
+      await initialize(forceRefresh: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_purchaseSubscription?.cancel());
+    super.dispose();
   }
 
   Future<void> _addSupporterStar() async {

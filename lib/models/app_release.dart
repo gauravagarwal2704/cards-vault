@@ -13,6 +13,15 @@ class AppRelease {
 
   static const history = [
     AppRelease(
+      version: '1.14.2',
+      buildNumber: 49,
+      date: '25 November 2026',
+      changes: [
+        'Replaced Custom amount with More amounts and selectable Google Play prices.',
+        'Cancelling Google Play checkout now restores the tip buttons and refreshes prices without restarting the app.',
+      ],
+    ),
+    AppRelease(
       version: '1.14.1',
       buildNumber: 48,
       date: '19 November 2026',

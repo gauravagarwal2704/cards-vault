@@ -31,7 +31,7 @@ For every product:
 
 The app queries Google Play for localized prices. Do not hard-code currency
 amounts in the app. The first, third, and fifth configured price tiers appear
-as quick amounts; **Custom amount** lets the user type or choose any configured tier.
+as quick amounts; **More amounts** shows every available configured tier as a selectable option.
 Google Play Billing cannot accept an arbitrary price that is absent from the
 Play product catalog.
 

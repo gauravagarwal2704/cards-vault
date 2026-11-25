@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.2+49] - 2026-11-25
+
+### Fixed
+- Replaced the misleading Custom amount entry with More amounts and selectable Google Play prices.
+- Cancelling Google Play checkout clears the waiting state, enables the tip buttons, and refreshes prices without restarting the app.
+- Checkout errors without a product ID now clear the waiting state and display the error.
+
 ## [1.14.1+48] - 2026-11-19
 
 ### Changed

@@ -48,8 +48,8 @@
         android:label="CardVault"
         android:name="${applicationName}"
         android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:icon="@mipmap/ic_launcher_burgundy"
+        android:roundIcon="@mipmap/ic_launcher_burgundy"
         android:usesCleartextTraffic="false"
         android:networkSecurityConfig="@xml/network_security_config">
         <activity
@@ -90,9 +90,22 @@
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/card_widget_compact_info" />
         </receiver>
         <activity-alias
-            android:name=".MainActivityThreeD"
+            android:name=".MainActivityBurgundy"
             android:targetActivity=".MainActivity"
             android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_burgundy"
+            android:roundIcon="@mipmap/ic_launcher_burgundy"
+            android:theme="@style/LaunchThemeBurgundy">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".MainActivityThreeD"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
             android:exported="true"
             android:icon="@mipmap/ic_launcher_three_d"
             android:roundIcon="@mipmap/ic_launcher_three_d"

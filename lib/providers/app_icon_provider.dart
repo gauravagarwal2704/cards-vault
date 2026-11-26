@@ -15,7 +15,7 @@ class AppIconProvider extends ChangeNotifier {
   static const _preferenceKey = 'appearance_app_icon';
   static const _channel = MethodChannel('cards_wallet/app_icon');
 
-  AppIconOption _selected = AppIconCatalog.threeDimensional;
+  AppIconOption _selected = AppIconCatalog.burgundy;
   bool _isInitialized = false;
   bool _isChanging = false;
 

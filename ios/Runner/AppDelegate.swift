@@ -40,7 +40,8 @@ import UIKit
 
         let iconName: String?
         switch iconId {
-        case "three_d": iconName = nil
+        case "burgundy": iconName = nil
+        case "three_d": iconName = "AppIcon"
         case "purple": iconName = "AppIconPurple"
         case "multicolor": iconName = "AppIconMulticolor"
         case "ocean": iconName = "AppIconOcean"

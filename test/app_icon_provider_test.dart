@@ -17,8 +17,10 @@ void main() {
         await Future<void>.delayed(Duration.zero);
       }
 
-      expect(AppIconCatalog.options, hasLength(7));
-      expect(provider.selected.id, 'three_d');
+      expect(AppIconCatalog.options, hasLength(8));
+      expect(provider.selected.id, 'burgundy');
+      expect(AppIconCatalog.findById(null).id, 'burgundy');
+      expect(AppIconCatalog.findById('unknown').id, 'burgundy');
 
       final error = await provider.selectIcon(AppIconCatalog.findById('red'));
       expect(error, isNull);

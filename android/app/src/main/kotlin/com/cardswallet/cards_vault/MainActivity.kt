@@ -54,6 +54,7 @@ class MainActivity: FlutterFragmentActivity() {
     private var appLifecycleHandler: AppLifecycleHandler? = null
     private var systemPaletteHandler: SystemPaletteHandler? = null
     private val iconAliases = mapOf(
+        "burgundy" to "MainActivityBurgundy",
         "three_d" to "MainActivityThreeD",
         "purple" to "MainActivityPurple",
         "multicolor" to "MainActivityMulticolor",

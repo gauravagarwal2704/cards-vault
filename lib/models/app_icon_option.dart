@@ -25,7 +25,15 @@ class AppIconCatalog {
     isThreeDimensional: true,
   );
 
+  static const burgundy = AppIconOption(
+    id: 'burgundy',
+    label: 'Burgundy',
+    description: 'Muted burgundy on warm cream',
+    assetPath: 'assets/branding/app_icon_burgundy.webp',
+  );
+
   static const options = <AppIconOption>[
+    burgundy,
     threeDimensional,
     AppIconOption(
       id: 'purple',
@@ -67,6 +75,6 @@ class AppIconCatalog {
 
   static AppIconOption findById(String? id) => options.firstWhere(
     (option) => option.id == id,
-    orElse: () => threeDimensional,
+    orElse: () => burgundy,
   );
 }

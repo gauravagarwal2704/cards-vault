@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.14.5+52] - 2026-11-26
+
+### Changed
+- New installations default to the Orchid theme and the burgundy app icon; saved appearance choices remain available.
+- Added a sharp burgundy icon with a golden vault dial to the appearance picker, Android launcher and widgets, and iOS icons, with a matching Play Store PNG derived from a high-resolution master.
+
 ## [1.14.4+51] - 2026-11-25
 
 ### Changed

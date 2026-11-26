@@ -43,6 +43,8 @@ void main() {
       addTearDown(fresh.dispose);
       await tester.pump();
       expect(fresh.paletteStrategy, config.AppPaletteStrategy.tonalSpot);
+      expect(fresh.seedColor, config.AccentColorOption.orchid.seedColor);
+      expect(fresh.accentId, config.AccentColorOption.orchid.id);
       SharedPreferences.setMockInitialValues({
         'appearance_seed_color': config.AccentColorOption.orchid.seedColor
             .toARGB32(),

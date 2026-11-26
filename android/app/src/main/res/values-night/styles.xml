@@ -6,6 +6,7 @@
              the Flutter engine draws its first frame -->
         <item name="android:windowBackground">@drawable/launch_background</item>
     </style>
+    <style name="LaunchThemeBurgundy" parent="LaunchTheme" />
     <style name="LaunchThemeThreeD" parent="LaunchTheme" />
     <style name="LaunchThemePurple" parent="LaunchTheme" />
     <style name="LaunchThemeMulticolor" parent="LaunchTheme" />

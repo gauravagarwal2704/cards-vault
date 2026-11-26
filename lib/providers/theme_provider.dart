@@ -19,8 +19,8 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   config.AppColorSource _colorSource = config.AppColorSource.preset;
   config.AppPaletteStrategy _paletteStrategy =
       config.AppPaletteStrategy.tonalSpot;
-  Color _seedColor = config.AccentColorOption.indigo.seedColor;
-  String? _accentId = config.AccentColorOption.indigo.id;
+  Color _seedColor = config.AccentColorOption.orchid.seedColor;
+  String? _accentId = config.AccentColorOption.orchid.id;
   Brightness _platformBrightness = Brightness.light;
   bool _isInitialized = false;
   bool _disposed = false;
@@ -29,15 +29,15 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   ThemeData _lightTheme = AppTheme.build(
     brightnessMode: config.AppBrightnessMode.light,
-    seedColor: config.AccentColorOption.indigo.seedColor,
+    seedColor: config.AccentColorOption.orchid.seedColor,
   );
   ThemeData _darkTheme = AppTheme.build(
     brightnessMode: config.AppBrightnessMode.dark,
-    seedColor: config.AccentColorOption.indigo.seedColor,
+    seedColor: config.AccentColorOption.orchid.seedColor,
   );
   ThemeData _oledTheme = AppTheme.build(
     brightnessMode: config.AppBrightnessMode.amoled,
-    seedColor: config.AccentColorOption.indigo.seedColor,
+    seedColor: config.AccentColorOption.orchid.seedColor,
   );
 
   ThemeProvider() {
@@ -89,7 +89,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   void _rebuildThemes() {
     final useSystemColors = _colorSource == config.AppColorSource.system;
     final themeSeed = useSystemColors
-        ? config.AccentColorOption.indigo.seedColor
+        ? config.AccentColorOption.orchid.seedColor
         : _seedColor;
     _lightTheme = AppTheme.build(
       brightnessMode: config.AppBrightnessMode.light,
@@ -172,7 +172,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
             ? null
             : (savedAccentId ??
                   config.AccentColorOption.findBySeed(_seedColor)?.id ??
-                  config.AccentColorOption.indigo.id);
+                  config.AccentColorOption.orchid.id);
         if (_colorSource == config.AppColorSource.preset) {
           final preset = config.AccentColorOption.findById(_accentId!);
           if (preset != null) _seedColor = preset.seedColor;
@@ -264,7 +264,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> useSystemColorSource() async {
     AppLogService.instance.action('Appearance', 'System colors selected');
     _colorSource = config.AppColorSource.system;
-    _accentId ??= config.AccentColorOption.indigo.id;
+    _accentId ??= config.AccentColorOption.orchid.id;
     _rebuildThemes();
     await _persist();
     if (_disposed) return;

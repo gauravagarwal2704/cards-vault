@@ -19,10 +19,12 @@
 		<key>CFBundlePrimaryIcon</key>
 		<dict>
 			<key>CFBundleIconName</key>
-			<string>AppIcon</string>
+			<string>AppIconBurgundy</string>
 		</dict>
 		<key>CFBundleAlternateIcons</key>
 		<dict>
+			<key>AppIcon</key>
+			<dict><key>CFBundleIconName</key><string>AppIcon</string></dict>
 			<key>AppIconPurple</key>
 			<dict><key>CFBundleIconName</key><string>AppIconPurple</string></dict>
 			<key>AppIconMulticolor</key>
@@ -42,10 +44,12 @@
 		<key>CFBundlePrimaryIcon</key>
 		<dict>
 			<key>CFBundleIconName</key>
-			<string>AppIcon</string>
+			<string>AppIconBurgundy</string>
 		</dict>
 		<key>CFBundleAlternateIcons</key>
 		<dict>
+			<key>AppIcon</key>
+			<dict><key>CFBundleIconName</key><string>AppIcon</string></dict>
 			<key>AppIconPurple</key>
 			<dict><key>CFBundleIconName</key><string>AppIconPurple</string></dict>
 			<key>AppIconMulticolor</key>

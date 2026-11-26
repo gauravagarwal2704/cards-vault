@@ -70,15 +70,16 @@ open class CardWidgetProvider : AppWidgetProvider() {
 
         private fun appLogo(context: Context): Int {
             val icon = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-                .getString("flutter.appearance_app_icon", "three_d")
+                .getString("flutter.appearance_app_icon", "burgundy")
             return when (icon) {
+                "three_d" -> R.mipmap.ic_launcher_three_d
                 "purple" -> R.mipmap.ic_launcher_purple
                 "multicolor" -> R.mipmap.ic_launcher_multicolor
                 "ocean" -> R.mipmap.ic_launcher_ocean
                 "emerald" -> R.mipmap.ic_launcher_emerald
                 "sunset" -> R.mipmap.ic_launcher_sunset
                 "red" -> R.mipmap.ic_launcher_red
-                else -> R.mipmap.ic_launcher_three_d
+                else -> R.mipmap.ic_launcher_burgundy
             }
         }
 

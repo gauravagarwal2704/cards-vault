@@ -272,7 +272,9 @@ void main() {
       tester.getTopLeft(colorTiles[1]).dy,
       tester.getTopLeft(colorTiles[2]).dy,
     );
-    final selectedTile = tester.widget<AppSurface>(colorTiles.first);
+    final selectedTile = tester.widget<AppSurface>(
+      find.byKey(const ValueKey('color-theme-orchid')),
+    );
     expect(selectedTile.border, BorderSide.none);
     expect(
       selectedTile.color,
@@ -332,16 +334,16 @@ void main() {
     );
 
     final firstRowY = tester
-        .getCenter(find.byKey(const ValueKey('app-icon-three_d')))
+        .getCenter(find.byKey(const ValueKey('app-icon-burgundy')))
         .dy;
-    for (final id in ['purple', 'multicolor', 'ocean']) {
+    for (final id in ['three_d', 'purple', 'multicolor']) {
       expect(
         tester.getCenter(find.byKey(ValueKey('app-icon-$id'))).dy,
         closeTo(firstRowY, 0.1),
       );
     }
     expect(
-      tester.getCenter(find.byKey(const ValueKey('app-icon-emerald'))).dy,
+      tester.getCenter(find.byKey(const ValueKey('app-icon-ocean'))).dy,
       greaterThan(firstRowY),
     );
 

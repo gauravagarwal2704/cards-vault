@@ -6,7 +6,7 @@
         android:layout_height="32dp" android:gravity="center_vertical">
       <ImageView android:id="@+id/widget_app_logo" android:layout_width="16dp"
           android:layout_height="16dp" android:layout_marginEnd="3dp"
-          android:src="@mipmap/ic_launcher_three_d" android:scaleType="fitCenter"
+          android:src="@mipmap/ic_launcher_burgundy" android:scaleType="fitCenter"
           android:importantForAccessibility="no" />
       <TextView android:id="@+id/widget_title" android:layout_width="0dp"
           android:layout_weight="1" android:layout_height="wrap_content"

@@ -13,6 +13,15 @@ class AppRelease {
 
   static const history = [
     AppRelease(
+      version: '1.14.5',
+      buildNumber: 52,
+      date: '26 November 2026',
+      changes: [
+        'New installations now start with the Orchid theme and burgundy app icon.',
+        'Added a sharper burgundy app icon with a golden vault dial.',
+      ],
+    ),
+    AppRelease(
       version: '1.14.4',
       buildNumber: 51,
       date: '25 November 2026',
